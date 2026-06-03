@@ -1,0 +1,228 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import type { Proposal, ProposalLine, Product, Supplier, MarginRule, ProductCategory, ProposalStatus } from "@/lib/proposal";
+import {
+  PRODUCT_CATEGORY_LABELS, LINE_SOURCE_LABELS, LINE_SOURCE_COLORS,
+  PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS,
+} from "@/lib/proposal";
+import { gbp } from "@/lib/constants";
+import { createClient } from "@/lib/supabase/client";
+
+const STATUSES: ProposalStatus[] = ["draft", "ready", "sent", "accepted", "rejected", "expired"];
+const sell = (cost: number, markup: number) => Math.round(cost * (1 + markup / 100) * 100) / 100;
+
+export default function ProposalBuilder({
+  proposal, initialLines, products, suppliers, margins, pos,
+}: {
+  proposal: Proposal & { deals?: { customer_name?: string } };
+  initialLines: ProposalLine[];
+  products: Product[];
+  suppliers: Supplier[];
+  margins: MarginRule[];
+  pos: any[];
+}) {
+  const router = useRouter();
+  const supabase = createClient();
+  const [lines, setLines] = useState<ProposalLine[]>(initialLines);
+  const [busGrant, setBusGrant] = useState<number>(Number(proposal.bus_grant));
+  const [status, setStatus] = useState<ProposalStatus>(proposal.status);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [addProductId, setAddProductId] = useState("");
+
+  const supplierName = (id: string | null) => suppliers.find((s) => s.id === id)?.name ?? "Unassigned";
+  const markupFor = (cat: ProductCategory | null) =>
+    Number((margins.find((m) => m.category === cat) ?? margins.find((m) => m.category === null))?.markup_pct ?? 0);
+
+  const totals = useMemo(() => {
+    const cost = lines.reduce((s, l) => s + l.qty * l.unit_cost, 0);
+    const sellTotal = lines.reduce((s, l) => s + l.qty * sell(l.unit_cost, l.markup_pct), 0);
+    return { cost, sell: sellTotal, margin: sellTotal - cost, pays: sellTotal - busGrant };
+  }, [lines, busGrant]);
+  const needsSku = lines.filter((l) => l.needs_sku).length;
+
+  async function updateLine(id: number, patch: Partial<ProposalLine>) {
+    setLines((ls) => ls.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+    const { error } = await supabase.from("proposal_lines").update(patch).eq("id", id);
+    if (error) setMsg(error.message);
+  }
+  async function deleteLine(id: number) {
+    setLines((ls) => ls.filter((l) => l.id !== id));
+    await supabase.from("proposal_lines").delete().eq("id", id);
+  }
+  async function addLine() {
+    const p = products.find((x) => x.id === addProductId);
+    if (!p) return;
+    const row = {
+      proposal_id: proposal.id, product_id: p.id, description: p.name, category: p.category,
+      qty: 1, unit: p.unit, unit_cost: Number(p.cost_price), markup_pct: markupFor(p.category),
+      vat_rate: Number(p.vat_rate), source: "manual" as const, needs_sku: false,
+      sort: lines.length,
+    };
+    const { data, error } = await supabase.from("proposal_lines").insert(row).select("*").single();
+    if (error) { setMsg(error.message); return; }
+    setLines((ls) => [...ls, data as ProposalLine]);
+    setAddProductId("");
+  }
+
+  async function saveGrant(v: number) {
+    setBusGrant(v);
+    await supabase.from("proposals").update({ bus_grant: v }).eq("id", proposal.id);
+  }
+  async function saveStatus(s: ProposalStatus) {
+    setStatus(s);
+    await supabase.from("proposals").update({ status: s }).eq("id", proposal.id);
+  }
+  async function updatePoStatus(id: string, status: string) {
+    await supabase.from("purchase_orders").update({ status }).eq("id", id);
+    router.refresh();
+  }
+
+  async function generatePOs() {
+    setBusy(true); setMsg(null);
+    const res = await fetch("/api/proposals/generate-pos", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ proposal_id: proposal.id }),
+    });
+    const data = await res.json();
+    setBusy(false);
+    if (!res.ok) { setMsg(data.error ?? "PO generation failed"); return; }
+    setMsg(`Generated ${data.purchase_orders} purchase order(s).`);
+    router.refresh();
+  }
+
+  const numCell = "w-20 rounded border border-gray-300 px-2 py-1 text-right text-sm focus:border-teal-600 focus:outline-none";
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">{proposal.title}</h1>
+          <p className="mt-1 text-sm text-gray-500">
+            {proposal.deals?.customer_name ?? "Unlinked"} · {lines.length} lines
+            {needsSku > 0 && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">{needsSku} need SKU</span>}
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <select value={status} onChange={(e) => saveStatus(e.target.value as ProposalStatus)}
+            className="rounded-lg border border-gray-300 px-2 py-2 text-sm focus:border-teal-600 focus:outline-none"
+            style={{ color: PROPOSAL_STATUS_COLORS[status] }}>
+            {STATUSES.map((s) => <option key={s} value={s}>{PROPOSAL_STATUS_LABELS[s]}</option>)}
+          </select>
+          <a href={`/print/proposal/${proposal.id}`} target="_blank" rel="noreferrer" className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Customer view</a>
+          <button onClick={generatePOs} disabled={busy} className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60" style={{ backgroundColor: "#1B7A6E" }}>
+            {busy ? "Working…" : "Generate POs"}
+          </button>
+        </div>
+      </div>
+
+      {msg && <div className="rounded-md bg-teal-50 px-3 py-2 text-sm text-teal-800">{msg}</div>}
+
+      {/* Totals */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        {[
+          { label: "Cost", value: gbp(totals.cost) },
+          { label: "Sell (gross)", value: gbp(totals.sell) },
+          { label: "Gross margin", value: gbp(totals.margin) },
+          { label: "BUS grant", value: null },
+          { label: "Customer pays", value: gbp(totals.pays) },
+        ].map((c) => (
+          <div key={c.label} className="rounded-xl border border-gray-200 bg-white p-3">
+            <p className="text-[11px] uppercase tracking-wide text-gray-500">{c.label}</p>
+            {c.value !== null ? (
+              <p className="mt-1 text-lg font-semibold text-gray-900">{c.value}</p>
+            ) : (
+              <input type="number" step="100" value={busGrant} onChange={(e) => saveGrant(Number(e.target.value || 0))}
+                className="mt-1 w-full rounded border border-gray-300 px-2 py-1 text-lg font-semibold text-gray-900 focus:border-teal-600 focus:outline-none" />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Lines */}
+      <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-50 text-left text-xs text-gray-500">
+            <tr>
+              <th className="px-3 py-2 font-medium">Item</th>
+              <th className="px-3 py-2 font-medium">Source</th>
+              <th className="px-3 py-2 text-right font-medium">Qty</th>
+              <th className="px-3 py-2 text-right font-medium">Unit cost</th>
+              <th className="px-3 py-2 text-right font-medium">Markup %</th>
+              <th className="px-3 py-2 text-right font-medium">Unit sell</th>
+              <th className="px-3 py-2 text-right font-medium">Line sell</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-400">No lines.</td></tr>}
+            {lines.map((l) => (
+              <tr key={l.id} className={`border-t border-gray-100 ${l.needs_sku ? "bg-amber-50" : ""}`}>
+                <td className="px-3 py-2">
+                  <div className="font-medium text-gray-800">{l.description}</div>
+                  <div className="text-[11px] text-gray-400">{l.category ? PRODUCT_CATEGORY_LABELS[l.category] : ""}{l.needs_sku ? " · needs SKU" : ""}</div>
+                </td>
+                <td className="px-3 py-2">
+                  <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: LINE_SOURCE_COLORS[l.source] }}>{LINE_SOURCE_LABELS[l.source]}</span>
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <input type="number" step="0.5" defaultValue={l.qty} className={numCell}
+                    onBlur={(e) => updateLine(l.id, { qty: Number(e.target.value || 0) })} />
+                </td>
+                <td className="px-3 py-2 text-right text-gray-600">{gbp(l.unit_cost)}</td>
+                <td className="px-3 py-2 text-right">
+                  <input type="number" step="1" defaultValue={l.markup_pct} className={numCell}
+                    onBlur={(e) => updateLine(l.id, { markup_pct: Number(e.target.value || 0) })} />
+                </td>
+                <td className="px-3 py-2 text-right text-gray-600">{gbp(sell(l.unit_cost, l.markup_pct))}</td>
+                <td className="px-3 py-2 text-right font-semibold text-gray-900">{gbp(l.qty * sell(l.unit_cost, l.markup_pct))}</td>
+                <td className="px-3 py-2 text-right">
+                  <button onClick={() => deleteLine(l.id)} className="text-gray-400 hover:text-red-600" aria-label="Delete line">×</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="flex items-center gap-2 border-t border-gray-100 p-3">
+          <select value={addProductId} onChange={(e) => setAddProductId(e.target.value)}
+            className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-teal-600 focus:outline-none">
+            <option value="">+ add a product…</option>
+            {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({gbp(p.cost_price)})</option>)}
+          </select>
+          <button onClick={addLine} disabled={!addProductId} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Add line</button>
+        </div>
+      </div>
+
+      {/* Purchase orders */}
+      <div className="rounded-xl border border-gray-200 bg-white p-5">
+        <h2 className="mb-3 text-sm font-semibold text-gray-800">Purchase orders</h2>
+        {(!pos || pos.length === 0) ? (
+          <p className="text-sm text-gray-400">No POs yet. Click “Generate POs” to create supplier and subcontractor orders from the lines.</p>
+        ) : (
+          <div className="space-y-2">
+            {pos.map((po) => {
+              const cost = (po.po_lines ?? []).reduce((s: number, l: any) => s + Number(l.qty) * Number(l.unit_cost), 0);
+              return (
+                <div key={po.id} className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">
+                      {po.type === "subcontractor" ? "Subcontractor PO" : "Supplier PO"} · {supplierName(po.supplier_id)}
+                    </p>
+                    <p className="text-[11px] text-gray-400">{(po.po_lines ?? []).length} lines</p>
+                    <select value={po.status} onChange={(e) => updatePoStatus(po.id, e.target.value)}
+                      className="mt-1 rounded border border-gray-300 px-1.5 py-0.5 text-[11px] focus:border-teal-600 focus:outline-none">
+                      {["draft","sent","confirmed","received","cancelled"].map((st) => <option key={st} value={st}>{st}</option>)}
+                    </select>
+                  </div>
+                  <span className="text-sm font-semibold text-gray-900">{gbp(cost)}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
