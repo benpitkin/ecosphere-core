@@ -1,0 +1,16 @@
+# Supabase — find these in your Supabase project: Settings → API
+NEXT_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT-ref.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-public-key
+
+# Optional: service-role key for server-side integrations (Dispatch / Pulse).
+# NEVER expose this to the browser. Not required for the CRM app to run.
+# SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+
+# --- GoHighLevel sync (optional) ---------------------------------------------
+# Used by POST /api/sync/ghl to pull contacts + opportunities into Supabase.
+# Server-side only — never exposed to the browser.
+#   GHL_API_KEY:     a Private Integration token (recommended) or location API key
+#   GHL_LOCATION_ID: your GHL location / sub-account id
+# GHL_API_KEY=your-ghl-private-integration-token
+# GHL_LOCATION_ID=your-ghl-location-id
+# GHL_API_BASE=https://services.leadconnectorhq.com
