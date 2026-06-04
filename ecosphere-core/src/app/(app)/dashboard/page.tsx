@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { STAGE_LABELS, STAGE_COLORS, gbp, gbpK, initials } from "@/lib/constants";
-import type { PipelineStage } from "@/lib/types";
+import { STAGE_LABELS, STAGE_COLORS, LEAD_SOURCE_LABELS, gbp, gbpK, initials } from "@/lib/constants";
+import type { PipelineStage, LeadSource } from "@/lib/types";
+
+const STAGE_ORDER: PipelineStage[] = ["new_enquiry", "contacted", "survey_booked", "quoted", "won", "lost"];
 
 export const dynamic = "force-dynamic";
 
@@ -12,11 +14,14 @@ const BUS_STATUS_LABELS: Record<string, string> = {
 export default async function DashboardPage() {
   const supabase = createClient();
 
-  const [{ data: kpis }, { data: cashflow }, { data: attention }, { data: recent }] = await Promise.all([
+  const [{ data: kpis }, { data: cashflow }, { data: attention }, { data: recent }, { data: byStage }, { data: bySource }, { data: metrics }] = await Promise.all([
     supabase.from("v_dashboard_kpis").select("*").single(),
     supabase.from("v_bus_cashflow").select("*"),
     supabase.from("v_needs_attention").select("*").limit(6),
     supabase.from("deals").select("id, customer_name, postcode, stage, value_net, created_at").order("created_at", { ascending: false }).limit(6),
+    supabase.from("v_pipeline_by_stage").select("stage, deal_count, total_net_value"),
+    supabase.from("v_deals_by_source").select("lead_source, deal_count, total_net_value"),
+    supabase.from("v_deal_metrics").select("win_rate, won_deals, lost_deals, avg_deal_size").single(),
   ]);
 
   const { data: proposalRows } = await supabase.from("proposals").select("id, title, status, deal_id, created_at, deals(customer_name)").order("created_at", { ascending: false }).limit(5);
@@ -31,6 +36,23 @@ export default async function DashboardPage() {
   const rec = (recent ?? []) as { id: string; customer_name: string; postcode: string | null; stage: PipelineStage; value_net: number }[];
 
   const busTotal = cf.reduce((s, r) => s + Number(r.total_amount), 0);
+
+  // Pipeline funnel by canonical bucket (ordered).
+  const stageRows = (byStage ?? []) as { stage: PipelineStage; deal_count: number; total_net_value: number }[];
+  const funnel = STAGE_ORDER.map((s) => {
+    const r = stageRows.find((x) => x.stage === s);
+    return { stage: s, count: Number(r?.deal_count ?? 0), value: Number(r?.total_net_value ?? 0) };
+  });
+  const funnelMax = Math.max(1, ...funnel.map((f) => f.value));
+
+  // Lead-source breakdown (descending by value).
+  const sourceRows = ((bySource ?? []) as { lead_source: LeadSource; deal_count: number; total_net_value: number }[])
+    .map((r) => ({ source: r.lead_source, count: Number(r.deal_count), value: Number(r.total_net_value) }))
+    .sort((a, b) => b.value - a.value);
+  const sourceMax = Math.max(1, ...sourceRows.map((s) => s.value));
+
+  const m = metrics ?? { win_rate: 0, won_deals: 0, lost_deals: 0, avg_deal_size: 0 };
+  const winRatePct = Math.round(Number(m.win_rate) * 100);
 
   const tiles = [
     { label: "Active jobs", value: String(k.active_jobs), sub: `${k.won_jobs_this_month} installs this month`, accent: "#64748B" },
@@ -95,6 +117,51 @@ export default async function DashboardPage() {
         )}
       </section>
 
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-800">Pipeline by stage</h2>
+            <span className="rounded-full bg-teal-50 px-2 py-0.5 text-[11px] font-semibold text-teal-700">{winRatePct}% win rate</span>
+          </div>
+          <div className="space-y-2">
+            {funnel.map((f) => (
+              <div key={f.stage}>
+                <div className="mb-0.5 flex items-center justify-between text-xs">
+                  <span className="text-gray-600">{STAGE_LABELS[f.stage]} <span className="text-gray-400">&middot; {f.count}</span></span>
+                  <span className="font-medium text-gray-700">{gbp(f.value)}</span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-full rounded-full" style={{ width: `${Math.max(2, (f.value / funnelMax) * 100)}%`, backgroundColor: STAGE_COLORS[f.stage] }} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-3 text-[11px] text-gray-400">{m.won_deals} won &middot; {m.lost_deals} lost &middot; avg {gbp(Number(m.avg_deal_size))} (net)</p>
+        </section>
+
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-3 text-sm font-semibold text-gray-800">By lead source</h2>
+          {sourceRows.length === 0 ? (
+            <p className="text-sm text-gray-400">No deals yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {sourceRows.map((s) => (
+                <div key={s.source}>
+                  <div className="mb-0.5 flex items-center justify-between text-xs">
+                    <span className="text-gray-600">{LEAD_SOURCE_LABELS[s.source] ?? s.source} <span className="text-gray-400">&middot; {s.count}</span></span>
+                    <span className="font-medium text-gray-700">{gbp(s.value)}</span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                    <div className="h-full rounded-full" style={{ width: `${Math.max(2, (s.value / sourceMax) * 100)}%`, backgroundColor: "#1B7A6E" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="mt-3 text-[11px] text-gray-400">Net pipeline value attributed to each lead source.</p>
+        </section>
+      </div>
+
       <section>
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-400">Connected integrations</p>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -113,9 +180,9 @@ export default async function DashboardPage() {
       <section className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-gray-800">Proposals</h2>
-          <Link href="/proposals" className="text-xs font-medium text-teal-700 hover:underline">View all →</Link>
+          <Link href="/proposals" className="text-xs font-medium text-teal-700 hover:underline">View all &rarr;</Link>
         </div>
-        <p className="mb-3 text-sm text-gray-500">{openProps.length} open · {gbp(openPropValue)} (sell)</p>
+        <p className="mb-3 text-sm text-gray-500">{openProps.length} open &middot; {gbp(openPropValue)} (sell)</p>
         <ul className="divide-y divide-gray-100">
           {recentProps.length === 0 && <li className="py-2 text-sm text-gray-400">No proposals yet.</li>}
           {recentProps.map((p) => (
@@ -133,7 +200,7 @@ export default async function DashboardPage() {
         <section className="rounded-xl border border-gray-200 bg-white p-5">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-sm font-semibold text-gray-800">Recent deals</h2>
-            <Link href="/pipeline" className="text-xs font-medium text-teal-700 hover:underline">View all →</Link>
+            <Link href="/pipeline" className="text-xs font-medium text-teal-700 hover:underline">View all &rarr;</Link>
           </div>
           <ul className="divide-y divide-gray-100">
             {rec.length === 0 && <li className="py-3 text-sm text-gray-400">No deals yet.</li>}
@@ -166,7 +233,7 @@ export default async function DashboardPage() {
                   <Link href={`/deals/${d.id}`} className="flex items-center justify-between gap-3 py-2.5 hover:opacity-80">
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium text-gray-800">{d.customer_name}</p>
-                      <p className="truncate text-[11px] text-amber-700">{d.stage_label ?? "—"} · {d.days_in_stage}d stale</p>
+                      <p className="truncate text-[11px] text-amber-700">{d.stage_label ?? "—"} &middot; {d.days_in_stage}d stale</p>
                     </div>
                     <span className="shrink-0 text-sm font-semibold text-gray-700">{gbp(Number(d.value_net))}</span>
                   </Link>

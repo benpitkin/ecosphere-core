@@ -12,6 +12,7 @@ const GROUPS: Group[] = [
     heading: "Workflow",
     items: [
       { href: "/dashboard", label: "Dashboard" },
+      { href: "/search", label: "Search" },
       { href: "/pipeline", label: "Pipeline" },
       { href: "/jobs", label: "Jobs" },
       { href: "/contacts", label: "Contacts" },
@@ -30,14 +31,14 @@ const GROUPS: Group[] = [
     heading: "Intelligence",
     items: [
       { href: "/chat", label: "AI Chat", soon: true },
-      { href: "/activity", label: "Activity", soon: true },
+      { href: "/activity", label: "Activity" },
     ],
   },
   {
     heading: "Setup",
     items: [
       { href: "/integrations", label: "Integrations", soon: true },
-      { href: "/settings", label: "Settings", soon: true },
+      { href: "/settings", label: "Settings" },
     ],
   },
 ];

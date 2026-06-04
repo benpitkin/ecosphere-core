@@ -22,6 +22,7 @@ export default function CatalogueManager({
   const [tab, setTab] = useState<Tab>("products");
   const [msg, setMsg] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("");
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   const supplierName = (id: string | null) => suppliers.find((s) => s.id === id)?.name ?? "—";
   const markupFor = (cat: ProductCategory) =>
@@ -52,6 +53,19 @@ export default function CatalogueManager({
     setProducts((ps) => ps.map((p) => (p.id === id ? { ...p, ...patch } : p)));
     const { error } = await supabase.from("products").update(patch).eq("id", id);
     if (error) setMsg(error.message);
+  }
+
+  async function uploadImage(p: Product, file: File) {
+    setUploadingId(p.id); setMsg(null);
+    if (!file.type.startsWith("image/")) { setUploadingId(null); setMsg("Please choose an image file."); return; }
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const path = `${p.id}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("part-images").upload(path, file, { upsert: true, cacheControl: "3600" });
+    if (upErr) { setUploadingId(null); setMsg(`Upload failed: ${upErr.message}`); return; }
+    const { data } = supabase.storage.from("part-images").getPublicUrl(path);
+    const url = `${data.publicUrl}?v=${Date.now()}`;
+    await updateProduct(p.id, { attrs: { ...(((p.attrs as any)) ?? {}), image_url: url } } as any);
+    setUploadingId(null); setMsg("Photo uploaded.");
   }
 
   async function addSupplier(e: React.FormEvent) {
@@ -85,7 +99,7 @@ export default function CatalogueManager({
     <div className="mx-auto max-w-6xl space-y-4">
       <div>
         <h1 className="text-xl font-semibold text-gray-900">Catalogue</h1>
-        <p className="text-sm text-gray-500">{products.length} products · {suppliers.length} suppliers · cost-only pricing, sell from margin</p>
+        <p className="text-sm text-gray-500">{products.length} products · {suppliers.length} suppliers · cost-only pricing, sell from margin · add a photo URL to show real parts on proposals</p>
       </div>
 
       <div className="flex gap-1.5">
@@ -135,11 +149,12 @@ export default function CatalogueManager({
                   <th className="px-3 py-2 text-right font-medium">Cost £</th>
                   <th className="px-3 py-2 text-right font-medium">Margin</th>
                   <th className="px-3 py-2 text-right font-medium">Sell</th>
+                  <th className="px-3 py-2 font-medium">Image</th>
                   <th className="px-3 py-2 text-right font-medium">Active</th>
                 </tr>
               </thead>
               <tbody>
-                {shown.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-400">No products.</td></tr>}
+                {shown.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-gray-400">No products.</td></tr>}
                 {shown.map((p) => (
                   <tr key={p.id} className={`border-t border-gray-100 ${!p.active ? "opacity-50" : ""}`}>
                     <td className="px-3 py-2">
@@ -154,6 +169,24 @@ export default function CatalogueManager({
                     </td>
                     <td className="px-3 py-2 text-right text-gray-500">{markupFor(p.category)}%</td>
                     <td className="px-3 py-2 text-right font-semibold text-gray-900">{gbp(sellOf(p))}</td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        {(p.attrs as any)?.image_url ? (
+                          /* eslint-disable-next-line @next/next/no-img-element */
+                          <img src={(p.attrs as any).image_url} alt={p.name} className="h-9 w-12 rounded border border-gray-200 object-contain" style={{ backgroundColor: "#F0F7F5" }} />
+                        ) : (
+                          <span className="grid h-9 w-12 place-items-center rounded border border-dashed border-gray-300 text-[9px] text-gray-400">none</span>
+                        )}
+                        <label className="cursor-pointer rounded border border-gray-300 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50">
+                          {uploadingId === p.id ? "Uploading…" : "Upload"}
+                          <input type="file" accept="image/*" hidden
+                            onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadImage(p, f); e.currentTarget.value = ""; }} />
+                        </label>
+                      </div>
+                      <input defaultValue={(p.attrs as any)?.image_url ?? ""} placeholder="or paste a URL"
+                        className="mt-1 w-44 rounded border border-gray-300 px-2 py-1 text-[11px] focus:border-teal-600 focus:outline-none"
+                        onBlur={(e) => updateProduct(p.id, { attrs: { ...((p.attrs as any) ?? {}), image_url: e.target.value.trim() || undefined } } as any)} />
+                    </td>
                     <td className="px-3 py-2 text-right">
                       <input type="checkbox" checked={p.active} onChange={(e) => updateProduct(p.id, { active: e.target.checked })} />
                     </td>

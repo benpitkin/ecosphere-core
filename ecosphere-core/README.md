@@ -100,6 +100,7 @@ The Hub now includes the Proposal Engine: turn a survey/design into a costed, MC
 **Extra setup SQL (run after 0003 + seed):**
 4. `supabase/migrations/0004_proposal_engine.sql` — catalogue, margin rules, kit templates, mapping rules, proposals, lines, POs
 5. `supabase/seed_proposal.sql` — starter catalogue, ASHP base kit, per-radiator bundle, mapping rules
+6. `supabase/migrations/0005_storage.sql` — part-image library bucket (only needed to upload part photos)
 
 **New pages:** `/catalogue` (products + margin rules), `/proposals` (list), `/proposals/[id]` (builder).
 
@@ -120,4 +121,8 @@ The Hub now includes the Proposal Engine: turn a survey/design into a costed, MC
 - **Customer-facing proposal** at `/print/proposal/[id]` — branded, sell-price-only, BUS deduction, print/save-as-PDF (linked from the proposal builder's "Customer view").
 - **Deployment runbook:** see `docs/DEPLOY.md` (GitHub → Supabase → Vercel, ~15 min) — includes a what-to-test checklist.
 
-Build status: full `next build` passes clean (16 routes, type-checked) on `next@14.2.35`.
+Build status: full `next build` passes clean (19 routes, type-checked) on `next@14.2.35`.
+
+## Latest changes
+
+See [`docs/CHANGELOG.md`](docs/CHANGELOG.md). **v3.3** adds global search, the Settings and Activity pages, two dashboard charts (pipeline-by-stage funnel + lead-source breakdown), and a payment schedule on the customer proposal — all frontend-only, no database or env changes.
