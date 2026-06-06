@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS } from "@/lib/proposal";
+import UploadHeatLossButton from "@/components/UploadHeatLossButton";
 import type { ProposalStatus } from "@/lib/proposal";
 
 export default function DealProposals({
@@ -33,9 +34,12 @@ export default function DealProposals({
     <div className="rounded-xl border border-gray-200 bg-white p-5">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-gray-800">Proposals</h2>
-        <button onClick={create} disabled={busy} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
-          {busy ? "Creating…" : "+ New proposal"}
-        </button>
+        <div className="flex items-center gap-2">
+          <UploadHeatLossButton dealId={dealId} />
+          <button onClick={create} disabled={busy} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60">
+            {busy ? "Creating…" : "+ New proposal"}
+          </button>
+        </div>
       </div>
       {err && <p className="mb-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">{err}</p>}
       {proposals.length === 0 ? (
