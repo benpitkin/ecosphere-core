@@ -50,9 +50,16 @@ export interface GhlOpportunity {
   contact?: { id?: string };
 }
 
-async function get(path: string, params: Record<string, string | number> = {}) {
+// GHL is inconsistent about the location param name: most endpoints use
+// `locationId`, but /opportunities/search expects `location_id`. The caller
+// picks the right key via `locationKey`.
+async function get(
+  path: string,
+  params: Record<string, string | number> = {},
+  locationKey: string = "locationId",
+) {
   const url = new URL(`${BASE}${path}`);
-  url.searchParams.set("locationId", process.env.GHL_LOCATION_ID as string);
+  url.searchParams.set(locationKey, process.env.GHL_LOCATION_ID as string);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
   const res = await fetch(url.toString(), { headers: headers(), cache: "no-store" });
   if (!res.ok) {
@@ -62,7 +69,7 @@ async function get(path: string, params: Record<string, string | number> = {}) {
   return res.json();
 }
 
-// Pull all contacts (paginated).
+// Pull all contacts (paginated). Contacts endpoint uses `locationId`.
 export async function fetchAllContacts(max = 5000): Promise<GhlContact[]> {
   const out: GhlContact[] = [];
   let page = 1;
@@ -77,12 +84,12 @@ export async function fetchAllContacts(max = 5000): Promise<GhlContact[]> {
   return out;
 }
 
-// Pull opportunities via search (paginated).
+// Pull opportunities via search (paginated). Search endpoint uses `location_id`.
 export async function fetchAllOpportunities(max = 5000): Promise<GhlOpportunity[]> {
   const out: GhlOpportunity[] = [];
   let page = 1;
   while (out.length < max) {
-    const data = await get("/opportunities/search", { limit: 100, page });
+    const data = await get("/opportunities/search", { limit: 100, page }, "location_id");
     const batch: GhlOpportunity[] = data.opportunities ?? [];
     out.push(...batch);
     if (batch.length < 100) break;
