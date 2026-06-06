@@ -98,3 +98,13 @@ export async function fetchAllOpportunities(max = 5000): Promise<GhlOpportunity[
   }
   return out;
 }
+
+export interface GhlStage { id: string; name: string; position?: number; }
+export interface GhlPipeline { id: string; name: string; stages: GhlStage[]; }
+
+// Pull the location's opportunity pipelines (each with its ordered stages).
+// Used to mirror GHL stages onto the hub board. Uses `locationId`.
+export async function fetchPipelines(): Promise<GhlPipeline[]> {
+  const data = await get("/opportunities/pipelines");
+  return (data.pipelines ?? []) as GhlPipeline[];
+}
