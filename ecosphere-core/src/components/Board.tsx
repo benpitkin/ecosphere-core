@@ -138,12 +138,12 @@ export default function Board({
       {error && <div className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</div>}
 
       <DragDropContext onDragEnd={onDragEnd}>
-        <div className="scroll-thin flex gap-3 overflow-x-auto pb-4">
+        <div className="scroll-thin flex h-[calc(100vh-12rem)] gap-3 overflow-x-auto pb-3">
           {pipelineStages.map((stage) => {
             const items = dealsByStage[stage.id] ?? [];
             const colTotal = items.reduce((s, d) => s + Number(d.value_gross), 0);
             return (
-              <div key={stage.id} className="flex w-72 shrink-0 flex-col">
+              <div key={stage.id} className="flex w-72 min-h-0 shrink-0 flex-col">
                 <div className="mb-2 flex items-center justify-between rounded-t-lg border-t-[3px] bg-white px-3 py-2 shadow-sm" style={{ borderTopColor: stage.color }}>
                   <span className="truncate text-sm font-semibold text-gray-800" title={stage.label}>{stage.label}</span>
                   <span className="ml-2 shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">{items.length}</span>
@@ -152,7 +152,7 @@ export default function Board({
                 <Droppable droppableId={stage.id}>
                   {(provided, snapshot) => (
                     <div ref={provided.innerRef} {...provided.droppableProps}
-                      className={`min-h-[120px] flex-1 rounded-lg p-1.5 transition ${snapshot.isDraggingOver ? "bg-teal-50" : "bg-gray-100/60"}`}>
+                      className={`min-h-[120px] flex-1 overflow-y-auto rounded-lg p-1.5 transition ${snapshot.isDraggingOver ? "bg-teal-50" : "bg-gray-100/60"}`}>
                       {items.map((deal, i) => <DealCard key={deal.id} deal={deal} index={i} accent={stage.color} />)}
                       {provided.placeholder}
                       {items.length === 0 && !snapshot.isDraggingOver && <p className="px-2 py-6 text-center text-xs text-gray-400">No opportunities</p>}
