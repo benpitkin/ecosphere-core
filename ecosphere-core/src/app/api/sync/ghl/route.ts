@@ -71,6 +71,7 @@ export async function POST() {
     const pipeIdByGhl = new Map<string, string>();
     const stageIdByGhl = new Map<string, string>();
     const firstStageByPipe = new Map<string, string>();
+    const bucketByStageId = new Map<string, string>();
     let pipesUpserted = 0, stagesUpserted = 0;
 
     for (let i = 0; i < ghlPipelines.length; i++) {
@@ -101,6 +102,7 @@ export async function POST() {
           if (error) throw new Error(`stage insert: ${error.message}`);
           sid = ins.id;
         }
+        bucketByStageId.set(sid, bucket);
         stageIdByGhl.set(gs.id, sid); stagesUpserted++;
         if (j === 0) firstStageByPipe.set(gp.id, sid);
       }
@@ -125,6 +127,7 @@ export async function POST() {
       else { hubStage = (o.pipelineId && firstStageByPipe.get(o.pipelineId)) || defaultFirstStage || undefined; fellBack++; }
       const ghlContactId = o.contactId || o.contact?.id;
       const contact = ghlContactId ? contactByGhl.get(ghlContactId) : null;
+      const isLost = hubStage ? bucketByStageId.get(hubStage) === "lost" : false;
       const inferenceText = [o.name, ...((contact?.tags as string[]) ?? [])].filter(Boolean).join(" ");
       return {
         ghl_opportunity_id: o.id,
@@ -137,6 +140,7 @@ export async function POST() {
         lead_source: inferSource(contact?.source),
         pipeline_id: hubPipe,
         pipeline_stage_id: hubStage ?? null,
+        lost_reason: isLost ? "Imported from GoHighLevel" : null,
       };
     });
     if (dealRows.length) {
