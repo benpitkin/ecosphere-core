@@ -4,6 +4,7 @@ import { gbp } from "@/lib/constants";
 import { PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS } from "@/lib/proposal";
 import type { ProposalStatus } from "@/lib/proposal";
 import NewProposalButton from "@/components/NewProposalButton";
+import UploadHeatLossButton from "@/components/UploadHeatLossButton";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,10 @@ export default async function ProposalsPage() {
           <h1 className="text-xl font-semibold text-gray-900">Proposals</h1>
           <p className="text-sm text-gray-500">{rows.length} proposals · design → costed kit → proposal</p>
         </div>
-        <NewProposalButton />
+        <div className="flex items-center gap-2">
+          <UploadHeatLossButton />
+          <NewProposalButton />
+        </div>
       </div>
 
       <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
