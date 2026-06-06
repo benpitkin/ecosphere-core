@@ -25,6 +25,18 @@ function inferSource(src?: string | null): LeadSource {
   return "other";
 }
 
+// Map a GHL stage NAME (often with emojis) to a canonical pipeline bucket.
+function inferBucket(name: string): string {
+  const s = (name || "").toLowerCase();
+  if (/won|accepted|install|deposit|sold|paid|complete/.test(s)) return "won";
+  if (/lost|dead|unqualified|not proceeding|declined|abandoned|cancel/.test(s)) return "lost";
+  if (/survey/.test(s)) return "survey_booked";
+  if (/proposal|quote|quoted|pricing|estimate/.test(s)) return "quoted";
+  if (/enquir|new lead|new sale|^new\b/.test(s)) return "new_enquiry";
+  if (/contact|engaged|follow|identified|service|aftercare|ongoing|customer|nurtur/.test(s)) return "contacted";
+  return "new_enquiry";
+}
+
 const norm = (s: string) => (s || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 export async function POST() {
@@ -72,6 +84,13 @@ export async function POST() {
     const stageByLabelNorm = new Map((stages ?? []).map((s: any) => [norm(s.label), s]));
     const firstStage = (stages ?? [])[0];
 
+    const preferredKeyByBucket: Record<string, string> = {
+      new_enquiry: "new-enquiry", contacted: "engaged", survey_booked: "survey-booked",
+      quoted: "quote-sent", won: "won-deposit", lost: "lost",
+    };
+    const stageForBucket = (b: string) =>
+      stageByKey.get(preferredKeyByBucket[b]) ?? (stages ?? []).find((s: any) => s.bucket === b) ?? firstStage;
+
     const stageForStatus = (status?: string) => {
       switch ((status || "open").toLowerCase()) {
         case "won": return stageByKey.get("won-deposit") ?? firstStage;
@@ -94,13 +113,14 @@ export async function POST() {
 
     // 4) Opportunities -> deals --------------------------------------------
     const opps = await fetchAllOpportunities();
-    let matchedByName = 0, fellBack = 0;
+    let matchedByName = 0, matchedByBucket = 0, fellBack = 0;
     const unmatched = new Set<string>();
     const dealRows = opps.map((o) => {
       const ghlStageName = o.pipelineStageId ? ghlStageNameById.get(o.pipelineStageId) : undefined;
       let stage = ghlStageName ? stageByLabelNorm.get(norm(ghlStageName)) : undefined;
       if (stage) { matchedByName++; }
-      else { if (ghlStageName) unmatched.add(ghlStageName); stage = stageForStatus(o.status); fellBack++; }
+      else if (ghlStageName) { stage = stageForBucket(inferBucket(ghlStageName)); matchedByBucket++; }
+      else { stage = stageForStatus(o.status); fellBack++; }
 
       const ghlContactId = o.contactId || o.contact?.id;
       const contact = ghlContactId ? contactByGhl.get(ghlContactId) : null;
@@ -131,7 +151,7 @@ export async function POST() {
       opportunities_synced: dealRows.length,
       pipeline: defaultPipeline.name,
       ghl_pipelines: ghlPipelineNames,
-      stage_match: { matched_by_name: matchedByName, fell_back_to_status: fellBack },
+      stage_match: { matched_by_name: matchedByName, matched_by_bucket: matchedByBucket, fell_back_to_status: fellBack },
       unmatched_ghl_stages: Array.from(unmatched),
     });
   } catch (e: any) {
