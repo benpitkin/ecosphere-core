@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { fetchBoardData, type BoardData } from "@/lib/dealsQuery";
 import Board from "@/components/Board";
+import SyncGhlButton from "@/components/SyncGhlButton";
 
 export const dynamic = "force-dynamic";
 
@@ -22,5 +23,16 @@ export default async function PipelinePage() {
     );
   }
 
-  return <Board pipelines={data.pipelines} stages={data.stages} initialDeals={data.deals} />;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-900">Pipeline</h1>
+          <p className="text-sm text-gray-500">{data.deals.length} deals · live from GoHighLevel</p>
+        </div>
+        <SyncGhlButton />
+      </div>
+      <Board pipelines={data.pipelines} stages={data.stages} initialDeals={data.deals} />
+    </div>
+  );
 }

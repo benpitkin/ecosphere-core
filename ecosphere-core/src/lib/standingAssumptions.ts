@@ -23,6 +23,9 @@ export interface LabourModel {
   commissioning_days: number;       // commissioning, electrical sign-off, handover
   days_per_radiator: number;        // per radiator changed/added
   cylinder_days: number;            // unvented cylinder install
+  solar_base_days: number;          // core PV install (scaffold liaison, roof, DC, AC, commissioning)
+  days_per_panel: number;           // per panel
+  battery_days: number;             // battery/EESS install
 }
 
 export const DEFAULT_ASSUMPTIONS: StandingAssumptions = {
@@ -37,6 +40,9 @@ export const DEFAULT_ASSUMPTIONS: StandingAssumptions = {
     commissioning_days: 1,          // TUNE
     days_per_radiator: 0.4,         // TUNE
     cylinder_days: 0.5,             // TUNE
+    solar_base_days: 1.5,           // TUNE
+    days_per_panel: 0.1,            // TUNE
+    battery_days: 0.5,              // TUNE
   },
 };
 
@@ -57,18 +63,27 @@ export function sizeHeatPump(
 
 // Labour estimate (in engineer-days) from the specified system.
 export function estimateLabour(
-  opts: { radiatorCount: number; hasCylinder: boolean; hasHeatPump: boolean },
+  opts: {
+    radiatorCount?: number; hasCylinder?: boolean; hasHeatPump?: boolean;
+    hasSolar?: boolean; panelCount?: number; hasBattery?: boolean;
+  },
   a: StandingAssumptions = DEFAULT_ASSUMPTIONS,
 ): { days: number; day_rate: number; breakdown: { label: string; days: number }[] } {
   const L = a.labour;
+  const r = (n: number) => Math.round(n * 10) / 10;
   const breakdown: { label: string; days: number }[] = [];
   if (opts.hasHeatPump) {
     breakdown.push({ label: "ASHP install (base)", days: L.ashp_base_days });
     breakdown.push({ label: "Commissioning & electrical", days: L.commissioning_days });
   }
   if (opts.hasCylinder) breakdown.push({ label: "Cylinder install", days: L.cylinder_days });
-  if (opts.radiatorCount > 0)
-    breakdown.push({ label: `Radiators (${opts.radiatorCount})`, days: Math.round(opts.radiatorCount * L.days_per_radiator * 10) / 10 });
-  const days = Math.round(breakdown.reduce((s, b) => s + b.days, 0) * 10) / 10;
+  if ((opts.radiatorCount ?? 0) > 0)
+    breakdown.push({ label: `Radiators (${opts.radiatorCount})`, days: r(opts.radiatorCount! * L.days_per_radiator) });
+  if (opts.hasSolar) {
+    breakdown.push({ label: "Solar install (base)", days: L.solar_base_days });
+    if ((opts.panelCount ?? 0) > 0) breakdown.push({ label: `Panels (${opts.panelCount})`, days: r(opts.panelCount! * L.days_per_panel) });
+  }
+  if (opts.hasBattery) breakdown.push({ label: "Battery install", days: L.battery_days });
+  const days = r(breakdown.reduce((s, b) => s + b.days, 0));
   return { days, day_rate: L.day_rate, breakdown };
 }
