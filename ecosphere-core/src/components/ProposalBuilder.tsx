@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Proposal, ProposalLine, Product, Supplier, MarginRule, ProductCategory, ProposalStatus } from "@/lib/proposal";
 import {
-  PRODUCT_CATEGORY_LABELS, LINE_SOURCE_LABELS, LINE_SOURCE_COLORS,
+  PRODUCT_CATEGORY_LABELS, PRODUCT_CATEGORY_OPTIONS, LINE_SOURCE_LABELS, LINE_SOURCE_COLORS,
   PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS,
 } from "@/lib/proposal";
 import { gbp } from "@/lib/constants";
@@ -72,6 +72,16 @@ export default function ProposalBuilder({
     if (error) { setMsg(error.message); return; }
     setLines((ls) => [...ls, data as ProposalLine]);
     setAddProductId("");
+  }
+  async function addBlankLine() {
+    const row = {
+      proposal_id: proposal.id, product_id: null, description: "New line", category: "other" as const,
+      qty: 1, unit: "each", unit_cost: 0, markup_pct: markupForMargin(jobMargin),
+      vat_rate: 20, source: "manual" as const, needs_sku: false, sort: lines.length,
+    };
+    const { data, error } = await supabase.from("proposal_lines").insert(row).select("*").single();
+    if (error) { setMsg(error.message); return; }
+    setLines((ls) => [...ls, data as ProposalLine]);
   }
 
   function setJobMarginLive(marginPct: number) {
@@ -172,7 +182,7 @@ export default function ProposalBuilder({
         <p className="mt-1 text-[11px] text-gray-400">Sets a <strong>{markupForMargin(jobMargin)}% markup</strong> on every line to achieve a {jobMargin}% margin. You can still fine-tune any individual line below.</p>
       </div>
 
-      {/* Lines */}
+      {/* Lines — every field is editable inline */}
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
         <table className="w-full text-sm">
           <thead className="bg-gray-50 text-left text-xs text-gray-500">
@@ -192,8 +202,17 @@ export default function ProposalBuilder({
             {lines.map((l) => (
               <tr key={l.id} className={`border-t border-gray-100 ${l.needs_sku ? "bg-amber-50" : ""}`}>
                 <td className="px-3 py-2">
-                  <div className="font-medium text-gray-800">{l.description}</div>
-                  <div className="text-[11px] text-gray-400">{l.category ? PRODUCT_CATEGORY_LABELS[l.category] : ""}{l.needs_sku ? " · needs SKU" : ""}</div>
+                  <input type="text" defaultValue={l.description}
+                    onBlur={(e) => updateLine(l.id, { description: e.target.value })}
+                    className="w-full min-w-[15rem] rounded border border-transparent px-1.5 py-1 text-sm font-medium text-gray-800 hover:border-gray-300 focus:border-teal-600 focus:bg-white focus:outline-none" />
+                  <div className="flex items-center gap-1">
+                    <select defaultValue={l.category ?? "other"}
+                      onChange={(e) => updateLine(l.id, { category: e.target.value as ProductCategory })}
+                      className="rounded border border-transparent bg-transparent px-1 py-0.5 text-[11px] text-gray-400 hover:border-gray-300 focus:border-teal-600 focus:text-gray-700 focus:outline-none">
+                      {PRODUCT_CATEGORY_OPTIONS.map(([v, lab]) => <option key={v} value={v}>{lab}</option>)}
+                    </select>
+                    {l.needs_sku && <span className="text-[11px] font-medium text-amber-600">· needs SKU</span>}
+                  </div>
                 </td>
                 <td className="px-3 py-2">
                   <span className="rounded px-1.5 py-0.5 text-[10px] font-semibold text-white" style={{ backgroundColor: LINE_SOURCE_COLORS[l.source] }}>{LINE_SOURCE_LABELS[l.source]}</span>
@@ -202,7 +221,10 @@ export default function ProposalBuilder({
                   <input type="number" step="0.5" defaultValue={l.qty} className={numCell}
                     onBlur={(e) => updateLine(l.id, { qty: Number(e.target.value || 0) })} />
                 </td>
-                <td className="px-3 py-2 text-right text-gray-600">{gbp(l.unit_cost)}</td>
+                <td className="px-3 py-2 text-right">
+                  <input key={`uc-${l.id}-${rev}`} type="number" step="0.01" defaultValue={l.unit_cost} className={numCell}
+                    onBlur={(e) => updateLine(l.id, { unit_cost: Number(e.target.value || 0) })} />
+                </td>
                 <td className="px-3 py-2 text-right">
                   <input key={`mk-${l.id}-${rev}`} type="number" step="1" defaultValue={l.markup_pct} className={numCell}
                     onBlur={(e) => updateLine(l.id, { markup_pct: Number(e.target.value || 0) })} />
@@ -221,13 +243,14 @@ export default function ProposalBuilder({
             ))}
           </tbody>
         </table>
-        <div className="flex items-center gap-2 border-t border-gray-100 p-3">
+        <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 p-3">
           <select value={addProductId} onChange={(e) => setAddProductId(e.target.value)}
             className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:border-teal-600 focus:outline-none">
-            <option value="">+ add a product…</option>
+            <option value="">+ add from catalogue…</option>
             {products.map((p) => <option key={p.id} value={p.id}>{p.name} ({gbp(p.cost_price)})</option>)}
           </select>
-          <button onClick={addLine} disabled={!addProductId} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Add line</button>
+          <button onClick={addLine} disabled={!addProductId} className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">Add</button>
+          <button onClick={addBlankLine} className="rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">+ Blank line</button>
         </div>
       </div>
 
