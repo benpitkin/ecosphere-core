@@ -91,13 +91,22 @@ export function parseHeatLoss(raw: string): HeatLossPayload {
   const cyl: Record<string, any> = {};
   if ((m = find(/Capacity\s+(\d+)\s*litres/i))) cyl.litres = num(m[1]);
   {
+    // The summary CYLINDER block sits next to other columns, so be strict about
+    // what counts as the cylinder name: it must look like a cylinder, and must
+    // NOT be emitter/underfloor text bleeding in from the adjacent column.
+    const looksLikeCyl = (t: string) =>
+      /(cylinder|unvented|unistor|aerostor|arostor|solfex|joule|telford|mixergy|tank|\d+\s*(?:l\b|litre))/i.test(t);
+    const isNoise = (t: string) =>
+      /(replaced|additional|retained|underfloor|radiator|emitter|m²|new\s|heat pump|outdoor)/i.test(t);
     const ci = lines.findIndex((l) => /^\s*CYLINDER\b/i.test(l));
     if (ci >= 0) {
-      for (let i = ci + 1; i < Math.min(ci + 5, lines.length); i++) {
+      for (let i = ci + 1; i < Math.min(ci + 6, lines.length); i++) {
         const t = lines[i].trim();
+        if (!t) continue;
         const cm = t.match(/^Cylinder\s+([A-Z][A-Z0-9.\-\/]{3,})/i);
-        if (cm) cyl.model_number = cm[1].trim();
-        else if (!cyl.label && t && !/^Cylinder\b/i.test(t) && !/Capacity/i.test(t)) cyl.label = t.split(/\s{2,}/)[0].trim();
+        if (cm) { cyl.model_number = cm[1].trim(); continue; }
+        if (!cyl.label && looksLikeCyl(t) && !isNoise(t) && !/^Cylinder\b/i.test(t) && !/Capacity/i.test(t))
+          cyl.label = t.split(/\s{2,}/)[0].trim();
       }
     }
   }
