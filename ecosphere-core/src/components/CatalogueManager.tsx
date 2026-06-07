@@ -80,6 +80,16 @@ export default function CatalogueManager({
     setMsg("Supplier added.");
   }
 
+  async function deleteSupplier(id: string) {
+    const used = products.filter((p) => p.supplier_id === id).length;
+    if (!confirm(used ? `Remove this supplier? Its ${used} product(s) will be kept but left unassigned.` : "Remove this supplier?")) return;
+    const { error } = await supabase.from("suppliers").delete().eq("id", id);
+    if (error) { setMsg(error.message); return; }
+    setSuppliers((s) => s.filter((x) => x.id !== id));
+    setProducts((ps) => ps.map((p) => (p.supplier_id === id ? { ...p, supplier_id: null } : p)));
+    setMsg("Supplier removed.");
+  }
+
   async function saveMargin(cat: ProductCategory | null, pct: number) {
     const existing = margins.find((m) => m.category === cat);
     if (existing) {
@@ -208,7 +218,7 @@ export default function CatalogueManager({
           </form>
           <div className="overflow-hidden rounded-xl border border-gray-200 bg-white">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 text-left text-xs text-gray-500"><tr><th className="px-3 py-2 font-medium">Supplier</th><th className="px-3 py-2 font-medium">Contact</th><th className="px-3 py-2 font-medium">Email</th><th className="px-3 py-2 text-right font-medium">Products</th></tr></thead>
+              <thead className="bg-gray-50 text-left text-xs text-gray-500"><tr><th className="px-3 py-2 font-medium">Supplier</th><th className="px-3 py-2 font-medium">Contact</th><th className="px-3 py-2 font-medium">Email</th><th className="px-3 py-2 text-right font-medium">Products</th><th className="px-3 py-2"></th></tr></thead>
               <tbody>
                 {suppliers.length === 0 && <tr><td colSpan={4} className="px-3 py-6 text-center text-gray-400">No suppliers.</td></tr>}
                 {suppliers.map((s) => (
@@ -217,6 +227,7 @@ export default function CatalogueManager({
                     <td className="px-3 py-2 text-gray-600">{s.contact ?? "—"}</td>
                     <td className="px-3 py-2 text-gray-600">{s.email ?? "—"}</td>
                     <td className="px-3 py-2 text-right text-gray-500">{products.filter((p) => p.supplier_id === s.id).length}</td>
+                    <td className="px-3 py-2 text-right"><button onClick={() => deleteSupplier(s.id)} title="Remove supplier" aria-label="Remove supplier" className="rounded px-2 py-1 text-gray-300 hover:bg-red-50 hover:text-red-600">🗑</button></td>
                   </tr>
                 ))}
               </tbody>
