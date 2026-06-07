@@ -31,6 +31,9 @@ export default function ProposalBuilder({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [addProductId, setAddProductId] = useState("");
+  const avgMarkup = initialLines.length ? Math.round(initialLines.reduce((a, l) => a + Number(l.markup_pct), 0) / initialLines.length) : 50;
+  const [jobMargin, setJobMargin] = useState<number>(avgMarkup);
+  const [rev, setRev] = useState(0);
 
   const supplierName = (id: string | null) => suppliers.find((s) => s.id === id)?.name ?? "Unassigned";
   const markupFor = (cat: ProductCategory | null) =>
@@ -65,6 +68,15 @@ export default function ProposalBuilder({
     if (error) { setMsg(error.message); return; }
     setLines((ls) => [...ls, data as ProposalLine]);
     setAddProductId("");
+  }
+
+  function setJobMarginLive(v: number) {
+    setLines((ls) => ls.map((l) => ({ ...l, markup_pct: v })));
+    setRev((r) => r + 1);
+  }
+  async function persistJobMargin(v: number) {
+    const { error } = await supabase.from("proposal_lines").update({ markup_pct: v }).eq("proposal_id", proposal.id);
+    if (error) setMsg(error.message); else setMsg(`Job margin set to ${v}% on every line.`);
   }
 
   async function saveGrant(v: number) {
@@ -141,6 +153,19 @@ export default function ProposalBuilder({
         ))}
       </div>
 
+      {/* Job margin slider — one markup across every line */}
+      <div className="rounded-xl border border-gray-200 bg-white p-4">
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium text-gray-700">Job margin — applies to every line</label>
+          <span className="text-xl font-bold" style={{ color: "#1B7A6E" }}>{jobMargin}%</span>
+        </div>
+        <input type="range" min={0} max={150} step={1} value={jobMargin}
+          onChange={(e) => { const v = Number(e.target.value); setJobMargin(v); setJobMarginLive(v); }}
+          onMouseUp={() => persistJobMargin(jobMargin)} onTouchEnd={() => persistJobMargin(jobMargin)}
+          className="mt-3 w-full accent-teal-700" />
+        <p className="mt-1 text-[11px] text-gray-400">Drag to set one markup across all parts &amp; labour. You can still fine-tune any individual line below.</p>
+      </div>
+
       {/* Lines */}
       <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
         <table className="w-full text-sm">
@@ -173,11 +198,16 @@ export default function ProposalBuilder({
                 </td>
                 <td className="px-3 py-2 text-right text-gray-600">{gbp(l.unit_cost)}</td>
                 <td className="px-3 py-2 text-right">
-                  <input type="number" step="1" defaultValue={l.markup_pct} className={numCell}
+                  <input key={`mk-${l.id}-${rev}`} type="number" step="1" defaultValue={l.markup_pct} className={numCell}
                     onBlur={(e) => updateLine(l.id, { markup_pct: Number(e.target.value || 0) })} />
                 </td>
                 <td className="px-3 py-2 text-right text-gray-600">{gbp(sell(l.unit_cost, l.markup_pct))}</td>
-                <td className="px-3 py-2 text-right font-semibold text-gray-900">{gbp(l.qty * sell(l.unit_cost, l.markup_pct))}</td>
+                <td className="px-3 py-2 text-right font-semibold text-gray-900">
+                  {gbp(l.qty * sell(l.unit_cost, l.markup_pct))}
+                  {l.unit_cost > 0 && (
+                    <span className="ml-1 rounded bg-green-100 px-1 py-0.5 text-[10px] font-semibold text-green-700">+{gbp(l.qty * (sell(l.unit_cost, l.markup_pct) - l.unit_cost))}</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 text-right">
                   <button onClick={() => deleteLine(l.id)} className="text-gray-400 hover:text-red-600" aria-label="Delete line">×</button>
                 </td>
