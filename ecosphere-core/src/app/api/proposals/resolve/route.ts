@@ -19,11 +19,21 @@ interface DraftLine {
   sort: number;
 }
 
+// Words that don't help identify a specific model (brands + generic terms).
+const STOP = new Set([
+  "VAILLANT","DAIKIN","GRANT","MITSUBISHI","SAMSUNG","PANASONIC","LG","NIBE","WORCESTER","BOSCH",
+  "HEAT","PUMP","HEATPUMP","KW","WITH","AND","THE","UNIT","SOURCE","AIR","ASHP","CYLINDER","LITRE",
+  "LITRES","HOT","WATER","NEW","FOR","SYSTEM","HP",
+]);
+function tokens(label?: string | null): string[] {
+  if (!label) return [];
+  return Array.from(new Set(
+    String(label).toUpperCase().split(/[^A-Z0-9]+/).filter((t) => t.length >= 3 && !STOP.has(t))
+  ));
+}
+const norm = (s: any) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
 // POST /api/proposals/resolve
-// Body: { deal_id?, design_input_id?, source?, payload?, title?, bus_grant? }
-// Resolves a design payload (e.g. from a heat loss report) into a draft
-// proposal with costed, source-tagged lines: heat pump, cylinder, radiators,
-// base kit, per-radiator kits and a labour estimate.
 export async function POST(request: Request) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -33,7 +43,6 @@ export async function POST(request: Request) {
   let { deal_id = null, design_input_id = null, source = "manual", payload = null, title, bus_grant } = body;
 
   try {
-    // 1) Resolve the design payload (load existing design_input, or create one).
     if (design_input_id) {
       const { data, error } = await supabase.from("design_inputs").select("*").eq("id", design_input_id).single();
       if (error || !data) throw new Error("design_input not found");
@@ -46,7 +55,6 @@ export async function POST(request: Request) {
       design_input_id = data.id;
     }
 
-    // 2) Load catalogue + rules.
     const [{ data: products }, { data: rules }, { data: margins }, { data: tplItems }] = await Promise.all([
       supabase.from("products").select("*").eq("active", true),
       supabase.from("mapping_rules").select("*").eq("active", true),
@@ -72,19 +80,54 @@ export async function POST(request: Request) {
         vat_rate: Number(p.vat_rate), source: src, needs_sku: needs,
       });
 
-    const norm = (s: any) => String(s ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
     const matchByModel = (cat: ProductCategory, model: any) => {
       if (!model) return null;
       const t = norm(model);
+      if (t.length < 4) return null;
       return prods.find((p: any) => p.category === cat && norm(p.attrs?.mfr_code) === t) ?? null;
     };
-    const matchAll = (cat: ProductCategory, pred: (attrs: any) => boolean) =>
-      prods.filter((p: any) => p.category === cat && pred(p.attrs ?? {}));
+    // Score catalogue rows against the report's label tokens; return best.
+    const bestByTokens = (cands: any[], label?: string | null, preferOutdoor = false) => {
+      const toks = tokens(label);
+      const scored = cands.map((p: any) => {
+        const name = String(p.name).toUpperCase();
+        let s = 0;
+        for (const t of toks) if (name.includes(t)) s += 2;
+        if (preferOutdoor && p.attrs?.kind === "outdoor") s += 1;
+        return { p, s, cost: Number(p.cost_price) };
+      }).sort((a, b) => b.s - a.s || a.cost - b.cost);
+      return scored[0]?.p ?? null;
+    };
 
-    // Track what we specified, to drive the labour estimate.
+    // Heat pump: exact model -> kW + series match (auto-pick closest) -> size by load.
+    const pickHeatPump = (item: any): { product: any; exact: boolean } | null => {
+      const exact = matchByModel("heat_pump", item.model_number);
+      if (exact) return { product: exact, exact: true };
+      const kw = item.kw != null ? Number(item.kw) : null;
+      const notIndoor = (p: any) => p.attrs?.kind !== "indoor" && p.attrs?.kind !== "package";
+      let cands = prods.filter((p: any) => p.category === "heat_pump" && (kw == null || Number(p.attrs?.kw) === kw) && notIndoor(p));
+      if (cands.length === 0 && kw != null) cands = prods.filter((p: any) => p.category === "heat_pump" && Number(p.attrs?.kw) === kw);
+      if (cands.length) return { product: bestByTokens(cands, item.label, true), exact: false };
+      if (payload.heat_loss?.total_kw) {
+        const u = sizeHeatPump(Number(payload.heat_loss.total_kw), prods as any, DEFAULT_ASSUMPTIONS);
+        if (u) return { product: u, exact: false };
+      }
+      return null;
+    };
+    // Cylinder: exact model -> litres match (cheapest/brand, skip buffers), flagged.
+    const pickCylinder = (item: any): { product: any; exact: boolean } | null => {
+      const exact = matchByModel("cylinder", item.model_number);
+      if (exact) return { product: exact, exact: true };
+      const litres = item.litres != null ? Number(item.litres) : null;
+      if (litres != null) {
+        const cands = prods.filter((p: any) => p.category === "cylinder" && Number(p.attrs?.litres) === litres && !/BUFFER/i.test(p.name));
+        if (cands.length) return { product: bestByTokens(cands, item.label, false), exact: false };
+      }
+      return null;
+    };
+
     let radiatorCount = 0, hasCylinder = false, hasHeatPump = false;
 
-    // 3) Apply mapping rules.
     for (const rule of rules ?? []) {
       if (rule.type === "base_kit" && rule.bundle_template_id) {
         for (const it of itemsForTemplate(rule.bundle_template_id)) {
@@ -97,33 +140,26 @@ export async function POST(request: Request) {
         const cat = rule.target_category as ProductCategory;
         const qty = Number(rule.qty_per);
 
-        // (a) Exact model-number match (== catalogue mfr_code) — most reliable.
-        let match: any = matchByModel(cat, item.model_number);
-
-        // (b) Attribute match (kw for heat pumps, litres for cylinders).
-        if (!match && cat === "heat_pump" && item.kw != null) {
-          const c = matchAll(cat, (a) => Number(a.kw) === Number(item.kw) && a.kind === "outdoor");
-          if (c.length === 1) match = c[0];
-        }
-        if (!match && cat === "cylinder" && item.litres != null) {
-          const c = matchAll(cat, (a) => Number(a.litres) === Number(item.litres));
-          if (c.length === 1) match = c[0];
-        }
-
-        // (c) Sizing fallback for heat pumps: smallest outdoor unit >= heat loss.
-        if (!match && cat === "heat_pump" && payload.heat_loss?.total_kw) {
-          match = sizeHeatPump(Number(payload.heat_loss.total_kw), prods as any, DEFAULT_ASSUMPTIONS);
-        }
-
-        if (cat === "heat_pump") hasHeatPump = true;
-        if (cat === "cylinder") hasCylinder = true;
-
-        if (match) {
-          lineFromProduct(match, qty, "design");
+        if (cat === "heat_pump" || cat === "cylinder") {
+          if (cat === "heat_pump") hasHeatPump = true; else hasCylinder = true;
+          const r = cat === "heat_pump" ? pickHeatPump(item) : pickCylinder(item);
+          if (r && r.product) {
+            // Auto-picked closest (not an exact model match) is flagged for review.
+            lineFromProduct(r.product, qty, "design", !r.exact);
+          } else {
+            push({
+              product_id: null,
+              description: item.label || item.model_number || `${cat} (needs SKU)`,
+              category: cat, qty, unit: "each", unit_cost: 0,
+              markup_pct: markupFor(cat), vat_rate: 20, source: "design", needs_sku: true,
+            });
+          }
         } else {
-          push({
-            product_id: null,
-            description: item.label || item.model_number || `${cat} (needs SKU)`,
+          const cands = prods.filter((p: any) => p.category === cat);
+          const m = cands.length === 1 ? cands[0] : bestByTokens(cands, item.label || item.model);
+          if (m) lineFromProduct(m, qty, "design", cands.length !== 1);
+          else push({
+            product_id: null, description: item.label || `${cat} (needs SKU)`,
             category: cat, qty, unit: "each", unit_cost: 0,
             markup_pct: markupFor(cat), vat_rate: 20, source: "design", needs_sku: true,
           });
@@ -133,21 +169,15 @@ export async function POST(request: Request) {
       if (rule.type === "schedule" && rule.trigger_key && Array.isArray(payload[rule.trigger_key])) {
         for (const row of payload[rule.trigger_key]) {
           const status = String(row.status ?? row.change ?? "").toLowerCase();
-          // Order a radiator for new / additional / replacement rows. "keep" is skipped.
           if (!["new", "additional", "replacement", "replaced"].includes(status)) continue;
           radiatorCount += 1;
-
           const desc = ["Radiator", row.type, row.size_mm, row.room ? `(${row.room})` : ""]
             .filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
-          // Catalogue has no radiator range yet → flag for the office to price.
           push({
-            product_id: null,
-            description: `${desc} — needs SKU`,
+            product_id: null, description: `${desc} — needs SKU`,
             category: "radiator", qty: Number(rule.qty_per), unit: "each", unit_cost: 0,
             markup_pct: markupFor("radiator"), vat_rate: 20, source: "design", needs_sku: true,
           });
-
-          // Per-radiator install bundle (valves, tails, pipe, fittings).
           if (rule.bundle_template_id) {
             for (const it of itemsForTemplate(rule.bundle_template_id)) {
               if (it.products) lineFromProduct(it.products, Number(it.qty), "rule");
@@ -157,7 +187,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // 4) Labour estimate -> a single labour line (feeds the subcontractor PO).
     const labour = estimateLabour({ radiatorCount, hasCylinder, hasHeatPump }, DEFAULT_ASSUMPTIONS);
     if (labour.days > 0) {
       const detail = labour.breakdown.map((b) => `${b.label}: ${b.days}d`).join(", ");
@@ -169,7 +198,6 @@ export async function POST(request: Request) {
       });
     }
 
-    // 5) Create the proposal + insert lines.
     const { data: proposal, error: pErr } = await supabase.from("proposals").insert({
       deal_id, design_input_id,
       title: title || (hasHeatPump ? "Heat pump proposal" : "Proposal"),
@@ -185,12 +213,9 @@ export async function POST(request: Request) {
     }
 
     return NextResponse.json({
-      ok: true,
-      proposal_id: proposal.id,
-      lines: lines.length,
+      ok: true, proposal_id: proposal.id, lines: lines.length,
       needs_sku: lines.filter((l) => l.needs_sku).length,
-      labour_days: labour.days,
-      radiators: radiatorCount,
+      labour_days: labour.days, radiators: radiatorCount,
     });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Resolve failed" }, { status: 500 });
