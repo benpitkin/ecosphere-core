@@ -31,8 +31,12 @@ export default function ProposalBuilder({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [addProductId, setAddProductId] = useState("");
-  const avgMarkup = initialLines.length ? Math.round(initialLines.reduce((a, l) => a + Number(l.markup_pct), 0) / initialLines.length) : 50;
-  const [jobMargin, setJobMargin] = useState<number>(avgMarkup);
+  // Margin vs markup: margin% = profit/sell, markup% = profit/cost.
+  // A 30% margin needs a 30/70 = ~43% markup on cost.
+  const markupForMargin = (m: number) => (m >= 95 ? 1900 : Math.round((m / (100 - m)) * 1000) / 10);
+  const marginForMarkup = (mk: number) => Math.round((mk / (100 + mk)) * 100);
+  const avgMarkup = initialLines.length ? Math.round(initialLines.reduce((a, l) => a + Number(l.markup_pct), 0) / initialLines.length) : 43;
+  const [jobMargin, setJobMargin] = useState<number>(marginForMarkup(avgMarkup));
   const [rev, setRev] = useState(0);
 
   const supplierName = (id: string | null) => suppliers.find((s) => s.id === id)?.name ?? "Unassigned";
@@ -70,13 +74,15 @@ export default function ProposalBuilder({
     setAddProductId("");
   }
 
-  function setJobMarginLive(v: number) {
-    setLines((ls) => ls.map((l) => ({ ...l, markup_pct: v })));
+  function setJobMarginLive(marginPct: number) {
+    const mk = markupForMargin(marginPct);
+    setLines((ls) => ls.map((l) => ({ ...l, markup_pct: mk })));
     setRev((r) => r + 1);
   }
-  async function persistJobMargin(v: number) {
-    const { error } = await supabase.from("proposal_lines").update({ markup_pct: v }).eq("proposal_id", proposal.id);
-    if (error) setMsg(error.message); else setMsg(`Job margin set to ${v}% on every line.`);
+  async function persistJobMargin(marginPct: number) {
+    const mk = markupForMargin(marginPct);
+    const { error } = await supabase.from("proposal_lines").update({ markup_pct: mk }).eq("proposal_id", proposal.id);
+    if (error) setMsg(error.message); else setMsg(`Job margin ${marginPct}% set — ${mk}% markup on every line.`);
   }
 
   async function saveGrant(v: number) {
@@ -157,13 +163,13 @@ export default function ProposalBuilder({
       <div className="rounded-xl border border-gray-200 bg-white p-4">
         <div className="flex items-center justify-between">
           <label className="text-sm font-medium text-gray-700">Job margin — applies to every line</label>
-          <span className="text-xl font-bold" style={{ color: "#1B7A6E" }}>{jobMargin}%</span>
+          <span className="text-xl font-bold" style={{ color: "#1B7A6E" }}>{jobMargin}% <span className="text-xs font-medium text-gray-400">margin</span></span>
         </div>
-        <input type="range" min={0} max={150} step={1} value={jobMargin}
+        <input type="range" min={0} max={80} step={1} value={jobMargin}
           onChange={(e) => { const v = Number(e.target.value); setJobMargin(v); setJobMarginLive(v); }}
           onMouseUp={() => persistJobMargin(jobMargin)} onTouchEnd={() => persistJobMargin(jobMargin)}
           className="mt-3 w-full accent-teal-700" />
-        <p className="mt-1 text-[11px] text-gray-400">Drag to set one markup across all parts &amp; labour. You can still fine-tune any individual line below.</p>
+        <p className="mt-1 text-[11px] text-gray-400">Sets a <strong>{markupForMargin(jobMargin)}% markup</strong> on every line to achieve a {jobMargin}% margin. You can still fine-tune any individual line below.</p>
       </div>
 
       {/* Lines */}
