@@ -5,6 +5,7 @@ import { PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_COLORS } from "@/lib/proposal";
 import type { ProposalStatus } from "@/lib/proposal";
 import NewProposalButton from "@/components/NewProposalButton";
 import UploadHeatLossButton from "@/components/UploadHeatLossButton";
+import DeleteProposalButton from "@/components/DeleteProposalButton";
 
 export const dynamic = "force-dynamic";
 
@@ -41,10 +42,11 @@ export default async function ProposalsPage() {
               <th className="px-3 py-2 text-right font-medium">BUS</th>
               <th className="px-3 py-2 text-right font-medium">Customer pays</th>
               <th className="px-3 py-2 text-right font-medium">Margin</th>
+              <th className="px-3 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400">No proposals yet. Resolve a design to create one.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-400">No proposals yet. Resolve a design to create one.</td></tr>}
             {rows.map((p) => {
               const t = totalsById.get(p.id);
               return (
@@ -62,6 +64,7 @@ export default async function ProposalsPage() {
                   <td className="px-3 py-2 text-right text-gray-500">{gbp(Number(p.bus_grant ?? 0))}</td>
                   <td className="px-3 py-2 text-right font-semibold text-gray-900">{gbp(Number(t?.customer_pays ?? 0))}</td>
                   <td className="px-3 py-2 text-right text-gray-600">{Math.round(Number(t?.margin_pct ?? 0) * 100)}%</td>
+                  <td className="px-3 py-2 text-right"><DeleteProposalButton id={p.id} title={p.title} /></td>
                 </tr>
               );
             })}
