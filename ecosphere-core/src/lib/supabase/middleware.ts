@@ -30,9 +30,11 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/auth");
+  // Public, no-login routes: the gated customer proposal and its heat-loss API.
+  const isPublicRoute = pathname.startsWith("/p/") || pathname.startsWith("/api/proposal/");
 
   // Not signed in and trying to reach an app page → send to login.
-  if (!user && !isAuthRoute) {
+  if (!user && !isAuthRoute && !isPublicRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("next", pathname);

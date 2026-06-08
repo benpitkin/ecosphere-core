@@ -1,21 +1,25 @@
 import { notFound } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import type { Metadata } from "next";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { mcsFromPayload } from "@/lib/proposalMcs";
 import ProposalDocument, { type DocLineRow } from "@/components/ProposalDocument";
 
 export const dynamic = "force-dynamic";
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
-export default async function PrintProposal({ params }: { params: { id: string } }) {
-  const supabase = createClient();
+// Public, view-only, watermarked customer proposal reached by share token.
+// No login. The room-by-room heat-loss detail is gated behind a postcode check.
+export default async function CustomerProposal({ params }: { params: { token: string } }) {
+  const supabase = createAdminClient();
   const { data: proposal, error } = await supabase
     .from("proposals")
     .select("*, deals(customer_name, address, postcode, email)")
-    .eq("id", params.id)
+    .eq("share_token", params.token)
     .single();
   if (error || !proposal) notFound();
 
   const { data: lines } = await supabase
-    .from("proposal_lines").select("*, products(attrs)").eq("proposal_id", params.id).order("sort");
+    .from("proposal_lines").select("*, products(attrs)").eq("proposal_id", (proposal as any).id).order("sort");
 
   let payload: any = null;
   if ((proposal as any).design_input_id) {
@@ -28,8 +32,8 @@ export default async function PrintProposal({ params }: { params: { id: string }
       proposal={proposal}
       lines={(lines ?? []) as DocLineRow[]}
       mcs={mcsFromPayload(payload)}
-      customer={false}
-      shareToken={(proposal as any).share_token ?? null}
+      customer={true}
+      shareToken={params.token}
     />
   );
 }
