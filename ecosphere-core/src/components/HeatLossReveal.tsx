@@ -7,9 +7,10 @@ type Emitter = { room: string | null; status: string; type: string | null; size:
 // Customer-side gate: the room-by-room emitter design (the part a rival installer
 // would want to copy) stays server-side until the customer proves the proposal is
 // theirs by entering their postcode. View-only — no download, no raw file.
-export default function HeatLossReveal({ token, count }: { token: string; count: number }) {
+export default function HeatLossReveal({ token, count, hasReport }: { token: string; count: number; hasReport?: boolean }) {
   const [postcode, setPostcode] = useState("");
   const [emitters, setEmitters] = useState<Emitter[] | null>(null);
+  const [reportUrl, setReportUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -24,6 +25,7 @@ export default function HeatLossReveal({ token, count }: { token: string; count:
       const data = await res.json();
       if (!res.ok) { setErr(data.error ?? "Couldn't verify that postcode."); setBusy(false); return; }
       setEmitters(data.emitters ?? []);
+      setReportUrl(data.reportUrl ?? null);
     } catch {
       setErr("Something went wrong. Please try again.");
     }
@@ -54,6 +56,11 @@ export default function HeatLossReveal({ token, count }: { token: string; count:
             ))}
           </tbody>
         </table>
+        {reportUrl && (
+          <p className="mt-3 text-xs">
+            <a href={reportUrl} target="_blank" rel="noreferrer" className="font-semibold" style={{ color: "#1B7A6E" }}>View your full MCS heat loss report (PDF) →</a>
+          </p>
+        )}
         <p className="mt-2 text-[10px] text-gray-400">This room-by-room design was prepared specifically for your property by EcoSphere Energy and is provided for your records. Please do not redistribute.</p>
       </div>
     );

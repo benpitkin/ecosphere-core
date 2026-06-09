@@ -18,7 +18,7 @@ export async function POST(request: Request, { params }: { params: { token: stri
 
   const { data: proposal, error } = await supabase
     .from("proposals")
-    .select("id, design_input_id, deals(postcode)")
+    .select("id, design_input_id, heatloss_report_path, deals(postcode)")
     .eq("share_token", params.token)
     .single();
   if (error || !proposal) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -34,5 +34,13 @@ export async function POST(request: Request, { params }: { params: { token: stri
     payload = di?.payload ?? null;
   }
   const mcs = mcsFromPayload(payload);
-  return NextResponse.json({ emitters: mcs.emitters, count: mcs.emitters.length });
+
+  // Signed, time-limited link to the original MCS report (private bucket).
+  let reportUrl: string | null = null;
+  const path = (proposal as any).heatloss_report_path;
+  if (path) {
+    const { data: signed } = await supabase.storage.from("heatloss-reports").createSignedUrl(path, 3600);
+    reportUrl = signed?.signedUrl ?? null;
+  }
+  return NextResponse.json({ emitters: mcs.emitters, count: mcs.emitters.length, reportUrl });
 }

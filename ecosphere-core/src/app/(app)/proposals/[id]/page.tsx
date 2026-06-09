@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { Proposal, ProposalLine, Product, Supplier, MarginRule } from "@/lib/proposal";
 import ProposalBuilder from "@/components/ProposalBuilder";
+import CustomerDocEditor from "@/components/CustomerDocEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -31,6 +32,7 @@ export default async function ProposalPage({ params }: { params: { id: string } 
         margins={(margins ?? []) as MarginRule[]}
         pos={(pos ?? []) as any[]}
       />
+      <CustomerDocEditor proposalId={params.id} printHref={`/print/proposal/${params.id}`} />
     </div>
   );
 }

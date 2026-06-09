@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { mcsFromPayload } from "@/lib/proposalMcs";
 import ProposalDocument, { type DocLineRow } from "@/components/ProposalDocument";
 
@@ -23,6 +24,13 @@ export default async function PrintProposal({ params }: { params: { id: string }
     payload = di?.payload ?? null;
   }
 
+  let reportUrl: string | null = null;
+  if ((proposal as any).heatloss_report_path) {
+    const { data: signed } = await createAdminClient().storage
+      .from("heatloss-reports").createSignedUrl((proposal as any).heatloss_report_path, 3600);
+    reportUrl = signed?.signedUrl ?? null;
+  }
+
   return (
     <ProposalDocument
       proposal={proposal}
@@ -30,6 +38,7 @@ export default async function PrintProposal({ params }: { params: { id: string }
       mcs={mcsFromPayload(payload)}
       customer={false}
       shareToken={(proposal as any).share_token ?? null}
+      reportUrl={reportUrl}
     />
   );
 }

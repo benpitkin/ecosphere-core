@@ -1,27 +1,53 @@
 import { gbp } from "@/lib/constants";
 import type { ProposalLine, ProductCategory } from "@/lib/proposal";
 import {
-  COMPANY, SCOPE_ASHP, SCOPE_SOLAR, COMPLIANCE_BLOCKS,
+  COMPANY,
   CUSTOMER_GROUP_LABELS, CUSTOMER_GROUP_ORDER, HEADLINE_GROUPS,
   groupForCategory, specChips, lineImage, GROUP_IMAGE, type CustomerGroupKey,
 } from "@/lib/proposalContent";
 import type { McsSummary } from "@/lib/proposalMcs";
+import { resolveCustomerContent } from "@/lib/proposalCustomer";
 import PrintButton from "@/components/PrintButton";
 import ShareLinkButton from "@/components/ShareLinkButton";
 import HeatLossReveal from "@/components/HeatLossReveal";
 
 const TEAL = "#1B7A6E";
 
+// Simple horizontal comparison bars (SVG, print-safe, no JS).
+function CompareBars({ title, unit, items }: { title: string; unit: string; items: { label: string; value: number; color: string }[] }) {
+  const max = Math.max(1, ...items.map((i) => i.value));
+  const rowH = 30, w = 460, labelW = 70, barW = w - labelW - 90;
+  return (
+    <div className="mt-3">
+      <p className="mb-1 text-xs font-semibold text-gray-700">{title}</p>
+      <svg viewBox={`0 0 ${w} ${items.length * rowH + 6}`} className="w-full" role="img">
+        {items.map((it, i) => {
+          const len = Math.max(2, (it.value / max) * barW);
+          const y = i * rowH + 4;
+          return (
+            <g key={i}>
+              <text x={0} y={y + 15} className="fill-gray-600" style={{ fontSize: 11 }}>{it.label}</text>
+              <rect x={labelW} y={y} width={len} height={18} rx={3} fill={it.color} />
+              <text x={labelW + len + 6} y={y + 14} className="fill-gray-800" style={{ fontSize: 11, fontWeight: 600 }}>{unit}{Math.round(it.value).toLocaleString()}</text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 export type DocLineRow = ProposalLine & { products?: { attrs?: Record<string, any> | null } | null };
 
 export default function ProposalDocument({
-  proposal, lines, mcs, customer, shareToken,
+  proposal, lines, mcs, customer, shareToken, reportUrl,
 }: {
   proposal: any;
   lines: DocLineRow[];
   mcs: McsSummary;
   customer: boolean;
   shareToken?: string | null;
+  reportUrl?: string | null;
 }) {
   const ls = lines;
   const sell = (l: DocLineRow) => Math.round(l.unit_cost * (1 + l.markup_pct / 100) * 100) / 100;
@@ -65,7 +91,14 @@ export default function ProposalDocument({
   if (has("cylinder")) { const lit = attrOf("cylinder", "litres") ?? mcs.cylinderLitres; hero.push({ label: "Hot water", value: lit ? `${lit} L cylinder` : "Cylinder" }); }
   if (has("radiators")) hero.push({ label: "Emitters", value: `${groups.get("radiators")!.qty} radiators` });
 
-  const scope = [...(hasASHP ? SCOPE_ASHP : []), ...(hasSolar ? SCOPE_SOLAR : [])];
+  const firstName = cust?.customer_name?.split(" ")[0] ?? "there";
+  const content = resolveCustomerContent(proposal.customer_content, {
+    firstName,
+    customerName: cust?.customer_name ?? "Customer",
+    address: cust?.address ?? null,
+    hasASHP, hasSolar, mcs,
+  });
+  const reportPath = proposal.heatloss_report_path ?? null;
 
   const schedule = [
     { label: "Deposit", when: "On acceptance of this proposal", pct: "25%", amount: Math.round(customerPays * 0.25) },
@@ -138,11 +171,10 @@ export default function ProposalDocument({
           </div>
         </div>
 
-        <p className="mt-5 text-sm leading-relaxed text-gray-700">
-          Dear {cust?.customer_name?.split(" ")[0] ?? "there"}, thank you for considering {COMPANY.name}. Following our assessment
-          we&apos;ve designed the system below to suit your property, priced transparently and to MCS standards. We look forward to
-          helping you make the switch.
-        </p>
+        <div className="mt-5 text-sm leading-relaxed text-gray-700">
+          <p>Dear {firstName},</p>
+          <p className="mt-2 whitespace-pre-line">{content.intro}</p>
+        </div>
 
         {/* B. At a glance */}
         {hero.length > 0 && (
@@ -206,17 +238,10 @@ export default function ProposalDocument({
         </section>
 
         {/* D. System design & heat loss (MCS) */}
-        {mcs.hasHeatLoss && (
+        {mcs.hasHeatLoss && content.show.heatLoss && (
           <section className="mt-6">
             <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide" style={{ color: TEAL }}>System design &amp; heat loss</h2>
-            <p className="mb-3 text-sm leading-relaxed text-gray-700">
-              Your heating system has been designed from a room-by-room heat loss survey to BS EN 12831, sized to keep your home
-              comfortable at the local design conditions.
-              {mcs.heatPumpLabel ? ` We have specified the ${mcs.heatPumpLabel}` : " The proposed heat pump"}
-              {mcs.capacityAtDesignKw != null ? `, delivering ${mcs.capacityAtDesignKw} kW at the design outdoor temperature` : ""}
-              {mcs.scop != null ? ` at a seasonal efficiency (SCOP) of ${mcs.scop}` : ""}
-              {mcs.coveragePct != null ? `, covering ${mcs.coveragePct}% of your heat demand` : ""}.
-            </p>
+            <p className="mb-3 whitespace-pre-line text-sm leading-relaxed text-gray-700">{content.heatLossNarrative}</p>
             {figs.length > 0 && (
               <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(4, minmax(0,1fr))" }}>
                 {figs.map((f) => (
@@ -227,18 +252,10 @@ export default function ProposalDocument({
                 ))}
               </div>
             )}
-            {(mcs.savingLow != null || mcs.co2Low != null) && (
-              <p className="mt-3 text-xs text-gray-500">
-                {mcs.savingLow != null && <>Estimated running-cost saving of {gbp(mcs.savingLow)}{mcs.savingHigh != null ? `–${gbp(mcs.savingHigh)}` : ""} per year. </>}
-                {mcs.co2Low != null && <>Estimated carbon saving of {mcs.co2Low}{mcs.co2High != null ? `–${mcs.co2High}` : ""} tonnes CO₂ per year. </>}
-                Figures are estimates and confirmed at your technical survey.
-              </p>
-            )}
-
             {/* Room-by-room emitter design: full in internal mode, gated in customer mode */}
             {customer ? (
               <div className="mt-4">
-                <HeatLossReveal token={shareToken ?? ""} count={mcs.emitters.length} />
+                <HeatLossReveal token={shareToken ?? ""} count={mcs.emitters.length} hasReport={!!reportPath} />
               </div>
             ) : (
               mcs.emitters.length > 0 && (
@@ -267,6 +284,49 @@ export default function ProposalDocument({
                 </div>
               )
             )}
+            {!customer && reportUrl && (
+              <p className="mt-3 text-xs">
+                <a href={reportUrl} target="_blank" rel="noreferrer" className="font-semibold" style={{ color: TEAL }}>View full MCS heat loss report (PDF) →</a>
+              </p>
+            )}
+          </section>
+        )}
+
+        {/* E. Performance & savings */}
+        {content.show.performance && (
+          <section className="mt-6">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide" style={{ color: TEAL }}>Performance &amp; savings</h2>
+            {(() => {
+              const p = content.performance;
+              const tiles: { label: string; value: string }[] = [];
+              if (p.scop != null) tiles.push({ label: "Efficiency (SCOP)", value: `${p.scop}` });
+              if (p.runningCostNew != null) tiles.push({ label: "Heat pump running cost", value: `${gbp(p.runningCostNew)}/yr` });
+              if (p.runningCostOld != null && p.runningCostNew != null) tiles.push({ label: "Annual saving", value: `${gbp(Math.max(0, p.runningCostOld - p.runningCostNew))}/yr` });
+              if (p.annualDemandKwh != null) tiles.push({ label: "Annual heat demand", value: `${Math.round(p.annualDemandKwh).toLocaleString()} kWh` });
+              return tiles.length > 0 ? (
+                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(tiles.length, 4)}, minmax(0,1fr))` }}>
+                  {tiles.map((t) => (
+                    <div key={t.label} className="rounded-lg border border-gray-200 p-2 text-center">
+                      <p className="text-sm font-bold text-gray-900">{t.value}</p>
+                      <p className="text-[10px] leading-tight text-gray-500">{t.label}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : null;
+            })()}
+            {content.performance.runningCostOld != null && content.performance.runningCostNew != null && (
+              <CompareBars title="Estimated annual running cost" unit="£" items={[
+                { label: "Now", value: content.performance.runningCostOld, color: "#9CA3AF" },
+                { label: "Heat pump", value: content.performance.runningCostNew, color: TEAL },
+              ]} />
+            )}
+            {content.performance.co2Old != null && content.performance.co2New != null && (
+              <CompareBars title="Estimated annual carbon (tonnes CO₂)" unit="" items={[
+                { label: "Now", value: content.performance.co2Old, color: "#9CA3AF" },
+                { label: "Heat pump", value: content.performance.co2New, color: TEAL },
+              ]} />
+            )}
+            {content.performanceNote && <p className="mt-3 text-[11px] leading-snug text-gray-500">{content.performanceNote}</p>}
           </section>
         )}
 
@@ -297,12 +357,12 @@ export default function ProposalDocument({
           </div>
         </section>
 
-        {/* I. Scope of works */}
-        {scope.length > 0 && (
+        {/* I. Scope of works / explanation of works */}
+        {content.show.scope && content.scopeItems.length > 0 && (
           <section className="mt-6">
-            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide" style={{ color: TEAL }}>What we&apos;ll do</h2>
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide" style={{ color: TEAL }}>{content.scopeTitle}</h2>
             <ul className="grid grid-cols-1 gap-1 text-sm text-gray-700 sm:grid-cols-2">
-              {scope.map((s, i) => (
+              {content.scopeItems.map((s, i) => (
                 <li key={i} className="flex gap-2"><span style={{ color: TEAL }}>✓</span><span>{s}</span></li>
               ))}
             </ul>
@@ -334,22 +394,24 @@ export default function ProposalDocument({
         </section>
 
         {/* K. Compliance */}
-        <section className="mt-6">
-          <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide" style={{ color: TEAL }}>Compliance &amp; your protection</h2>
-          <div className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-2">
-            {COMPLIANCE_BLOCKS.map((b) => (
-              <div key={b.heading}>
-                <p className="text-xs font-semibold text-gray-800">{b.heading}</p>
-                <p className="text-[11px] leading-snug text-gray-500">{b.body}</p>
-              </div>
-            ))}
-          </div>
-        </section>
+        {content.show.compliance && content.compliance.length > 0 && (
+          <section className="mt-6">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide" style={{ color: TEAL }}>Compliance &amp; your protection</h2>
+            <div className="grid grid-cols-1 gap-x-5 gap-y-2 sm:grid-cols-2">
+              {content.compliance.map((b, i) => (
+                <div key={i}>
+                  <p className="text-xs font-semibold text-gray-800">{b.heading}</p>
+                  <p className="text-[11px] leading-snug text-gray-500">{b.body}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* M. Next steps */}
         <section className="mt-6 rounded-xl border border-gray-200 p-4">
           <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide" style={{ color: TEAL }}>Next steps</h2>
-          <p className="text-sm text-gray-700">To proceed, accept this proposal or sign and return it. We&apos;ll then issue your deposit invoice and book your technical survey and installation. After commissioning you&apos;ll receive your MCS certificate and full handover pack.</p>
+          <p className="whitespace-pre-line text-sm text-gray-700">{content.nextSteps}</p>
           <div className="mt-3 flex flex-wrap items-end justify-between gap-3 text-xs text-gray-500">
             <div className="flex-1">
               <div className="mb-1 h-8 border-b border-gray-300" style={{ minWidth: 180 }} />
