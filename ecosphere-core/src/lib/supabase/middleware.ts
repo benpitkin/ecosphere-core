@@ -30,8 +30,14 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   const isAuthRoute = pathname.startsWith("/login") || pathname.startsWith("/auth");
-  // Public, no-login routes: the gated customer proposal and its heat-loss API.
-  const isPublicRoute = pathname.startsWith("/p/") || pathname.startsWith("/api/proposal/");
+  // Public, no-login routes: the gated customer proposal and its heat-loss API,
+  // plus server-to-server endpoints that authenticate via their own shared
+  // secret (GHL webhook → WEBHOOK_SECRET, scheduled sync → CRON_SECRET).
+  const isPublicRoute =
+    pathname.startsWith("/p/") ||
+    pathname.startsWith("/api/proposal/") ||
+    pathname.startsWith("/api/webhooks/") ||
+    pathname.startsWith("/api/cron/");
 
   // Not signed in and trying to reach an app page → send to login.
   if (!user && !isAuthRoute && !isPublicRoute) {
