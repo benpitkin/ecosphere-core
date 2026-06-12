@@ -8,8 +8,10 @@
 -- 1) Lock down the SECURITY DEFINER trigger functions so they cannot be invoked
 --    via the public RPC endpoint (/rest/v1/rpc/...). Triggers still fire on the
 --    underlying DML; only direct anon/authenticated RPC calls are removed.
-revoke execute on function public.notify_dispatch_on_won() from anon, authenticated;
-revoke execute on function public.handle_new_user() from anon, authenticated;
+-- Functions grant EXECUTE to the built-in PUBLIC group by default, so anon/
+-- authenticated inherit it — must revoke from PUBLIC, not just those roles.
+revoke execute on function public.notify_dispatch_on_won() from public, anon, authenticated;
+revoke execute on function public.handle_new_user() from public, anon, authenticated;
 
 -- 2) Pin a non-mutable search_path on the flagged functions. All four reference
 --    only public objects + pg_catalog, so `public` preserves behaviour.
