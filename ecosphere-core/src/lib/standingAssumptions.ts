@@ -46,6 +46,22 @@ export const DEFAULT_ASSUMPTIONS: StandingAssumptions = {
   },
 };
 
+// Merge a stored (partial) assumptions blob — e.g. app_settings.value for key
+// 'proposal_assumptions', edited on the Settings page — over the code defaults.
+// Tolerant of null/garbage input so a missing settings row falls back cleanly.
+export function mergeAssumptions(stored: any): StandingAssumptions {
+  if (!stored || typeof stored !== "object") return DEFAULT_ASSUMPTIONS;
+  return {
+    ...DEFAULT_ASSUMPTIONS,
+    ...stored,
+    cylinder_litres_by_bedrooms: {
+      ...DEFAULT_ASSUMPTIONS.cylinder_litres_by_bedrooms,
+      ...(stored.cylinder_litres_by_bedrooms ?? {}),
+    },
+    labour: { ...DEFAULT_ASSUMPTIONS.labour, ...(stored.labour ?? {}) },
+  };
+}
+
 // Pick the smallest outdoor heat pump whose capacity meets the design load.
 // Used only as a FALLBACK when the report doesn't name a specific model.
 // `units` are catalogue products with attrs.kw and attrs.kind === "outdoor".

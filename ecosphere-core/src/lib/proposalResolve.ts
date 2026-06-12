@@ -4,7 +4,7 @@
 // (single design) and /api/proposals/build (merge several into one proposal).
 // =============================================================================
 import type { ProductCategory, LineSource } from "@/lib/proposal";
-import { DEFAULT_ASSUMPTIONS, sizeHeatPump } from "@/lib/standingAssumptions";
+import { DEFAULT_ASSUMPTIONS, sizeHeatPump, type StandingAssumptions } from "@/lib/standingAssumptions";
 
 export interface DraftLineCore {
   product_id: string | null;
@@ -24,6 +24,7 @@ export interface ResolveContext {
   rules: any[];
   margins: any[];
   tplItems: any[];
+  assumptions?: StandingAssumptions;
 }
 
 export interface Signals {
@@ -153,7 +154,7 @@ export function linesFromPayload(payload: any, ctx: ResolveContext): { lines: Dr
     if (cands.length === 0 && kw != null) cands = prods.filter((p: any) => p.category === "heat_pump" && Number(p.attrs?.kw) === kw);
     if (cands.length) return { product: bestByTokens(cands, item.label, true), exact: false };
     if (payload.heat_loss?.total_kw) {
-      const u = sizeHeatPump(Number(payload.heat_loss.total_kw), prods as any, DEFAULT_ASSUMPTIONS);
+      const u = sizeHeatPump(Number(payload.heat_loss.total_kw), prods as any, ctx.assumptions ?? DEFAULT_ASSUMPTIONS);
       if (u) return { product: u, exact: false };
     }
     return null;

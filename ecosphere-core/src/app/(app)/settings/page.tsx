@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { PRODUCT_CATEGORY_LABELS } from "@/lib/proposal";
 import type { ProductCategory } from "@/lib/proposal";
+import { mergeAssumptions } from "@/lib/standingAssumptions";
+import ProposalSettingsEditor from "@/components/ProposalSettingsEditor";
 
 export const dynamic = "force-dynamic";
 
@@ -10,13 +11,14 @@ type MarginRow = { id: string; category: ProductCategory | null; markup_pct: num
 export default async function SettingsPage() {
   const supabase = createClient();
 
-  const [margins, products, suppliers, contacts, proposals, pipelines] = await Promise.all([
+  const [margins, products, suppliers, contacts, proposals, pipelines, settings] = await Promise.all([
     supabase.from("margin_rules").select("id, category, markup_pct"),
     supabase.from("products").select("id", { count: "exact", head: true }),
     supabase.from("suppliers").select("id", { count: "exact", head: true }),
     supabase.from("contacts").select("id", { count: "exact", head: true }),
     supabase.from("proposals").select("id", { count: "exact", head: true }),
     supabase.from("pipelines").select("id", { count: "exact", head: true }),
+    supabase.from("app_settings").select("value").eq("key", "proposal_assumptions").maybeSingle(),
   ]);
 
   const rules = ((margins.data ?? []) as MarginRow[]).slice().sort((a, b) => {
@@ -24,7 +26,7 @@ export default async function SettingsPage() {
     if (b.category === null) return 1;
     return a.category.localeCompare(b.category);
   });
-  const globalRule = rules.find((r) => r.category === null);
+  const assumptions = mergeAssumptions((settings.data as any)?.value);
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const supabaseHost = supabaseUrl ? supabaseUrl.replace(/^https?:\/\//, "") : "Not configured";
@@ -65,32 +67,11 @@ export default async function SettingsPage() {
         <p className="mt-3 text-[11px] text-gray-400">These details appear on customer-facing proposals. Editable company records are on the roadmap.</p>
       </section>
 
-      <section className={card}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-800">Pricing &amp; margins</h2>
-          <Link href="/catalogue" className="text-xs font-medium text-teal-700 hover:underline">Edit in Catalogue →</Link>
-        </div>
-        <p className="mt-1 text-sm text-gray-500">
-          Sell prices are derived: <span className="font-mono text-xs">cost × (1 + markup%)</span>. Global default
-          {globalRule ? <> is <span className="font-semibold text-gray-900">{globalRule.markup_pct}%</span></> : " not set"}; per-category rules override it.
-        </p>
-        <div className="mt-3 overflow-hidden rounded-lg border border-gray-100">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-left text-xs text-gray-500">
-              <tr><th className="px-3 py-2 font-medium">Category</th><th className="px-3 py-2 text-right font-medium">Markup</th></tr>
-            </thead>
-            <tbody>
-              {rules.length === 0 && <tr><td colSpan={2} className="px-3 py-3 text-gray-400">No margin rules yet.</td></tr>}
-              {rules.map((r) => (
-                <tr key={r.id} className="border-t border-gray-100">
-                  <td className="px-3 py-2 text-gray-800">{r.category === null ? "Global default" : (PRODUCT_CATEGORY_LABELS[r.category] ?? r.category)}</td>
-                  <td className="px-3 py-2 text-right font-medium text-gray-900">{r.markup_pct}%</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
+      <ProposalSettingsEditor initialAssumptions={assumptions} initialMargins={rules} />
+
+      <p className="text-xs text-gray-400">
+        Per-part costs and SKUs are managed in the <Link href="/catalogue" className="font-medium text-teal-700 hover:underline">Catalogue</Link>.
+      </p>
 
       <section className={card}>
         <h2 className="text-sm font-semibold text-gray-800">Integrations</h2>
@@ -132,7 +113,7 @@ export default async function SettingsPage() {
         </div>
       </section>
 
-      <p className="text-center text-[11px] text-gray-400">Read-only for now — editable settings (company record, custom margins, integration keys) are on the roadmap.</p>
+      <p className="text-center text-[11px] text-gray-400">Labour, design defaults and margins are editable above. Company record and integration keys are on the roadmap.</p>
     </div>
   );
 }

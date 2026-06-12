@@ -1,23 +1,24 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { estimateLabour, DEFAULT_ASSUMPTIONS } from "@/lib/standingAssumptions";
+import { estimateLabour, mergeAssumptions } from "@/lib/standingAssumptions";
 import { linesFromPayload, type ResolveContext } from "@/lib/proposalResolve";
 
 export const dynamic = "force-dynamic";
 
 async function loadContext(supabase: any): Promise<ResolveContext & { markupFor: (c: any) => number }> {
-  const [{ data: products }, { data: rules }, { data: margins }, { data: tplItems }] = await Promise.all([
+  const [{ data: products }, { data: rules }, { data: margins }, { data: tplItems }, { data: settingsRow }] = await Promise.all([
     supabase.from("products").select("*").eq("active", true),
     supabase.from("mapping_rules").select("*").eq("active", true),
     supabase.from("margin_rules").select("*"),
     supabase.from("kit_template_items").select("*, products(*)"),
+    supabase.from("app_settings").select("value").eq("key", "proposal_assumptions").maybeSingle(),
   ]);
   const markupFor = (cat: any) => {
     const mm = (margins ?? []).find((r: any) => r.category === cat);
     const g = (margins ?? []).find((r: any) => r.category === null);
     return Number((mm ?? g)?.markup_pct ?? 0);
   };
-  return { products: products ?? [], rules: rules ?? [], margins: margins ?? [], tplItems: tplItems ?? [], markupFor };
+  return { products: products ?? [], rules: rules ?? [], margins: margins ?? [], tplItems: tplItems ?? [], assumptions: mergeAssumptions((settingsRow as any)?.value), markupFor };
 }
 
 // POST /api/proposals/resolve  — single design payload -> one proposal.
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
     const ctx = await loadContext(supabase);
     const { lines, signals } = linesFromPayload(payload, ctx);
 
-    const labour = estimateLabour(signals, DEFAULT_ASSUMPTIONS);
+    const labour = estimateLabour(signals, ctx.assumptions);
     if (labour.days > 0) {
       const detail = labour.breakdown.map((b) => `${b.label}: ${b.days}d`).join(", ");
       lines.push({

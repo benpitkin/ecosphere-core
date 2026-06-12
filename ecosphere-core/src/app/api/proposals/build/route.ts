@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { estimateLabour, DEFAULT_ASSUMPTIONS } from "@/lib/standingAssumptions";
+import { estimateLabour, mergeAssumptions } from "@/lib/standingAssumptions";
 import { linesFromPayload, mergeSignals, type ResolveContext, type DraftLineCore, type Signals } from "@/lib/proposalResolve";
 
 export const dynamic = "force-dynamic";
@@ -30,13 +30,15 @@ export async function POST(request: Request) {
     const allPayloads = [...inputs.map((d: any) => d.payload), ...(Array.isArray(payloads) ? payloads : [])];
     if (allPayloads.length === 0) throw new Error("no design data to build from");
 
-    const [{ data: products }, { data: rules }, { data: margins }, { data: tplItems }] = await Promise.all([
+    const [{ data: products }, { data: rules }, { data: margins }, { data: tplItems }, { data: settingsRow }] = await Promise.all([
       supabase.from("products").select("*").eq("active", true),
       supabase.from("mapping_rules").select("*").eq("active", true),
       supabase.from("margin_rules").select("*"),
       supabase.from("kit_template_items").select("*, products(*)"),
+      supabase.from("app_settings").select("value").eq("key", "proposal_assumptions").maybeSingle(),
     ]);
-    const ctx: ResolveContext = { products: products ?? [], rules: rules ?? [], margins: margins ?? [], tplItems: tplItems ?? [] };
+    const assumptions = mergeAssumptions((settingsRow as any)?.value);
+    const ctx: ResolveContext = { products: products ?? [], rules: rules ?? [], margins: margins ?? [], tplItems: tplItems ?? [], assumptions };
     const markupFor = (cat: any) => {
       const mm = (margins ?? []).find((r: any) => r.category === cat);
       const g = (margins ?? []).find((r: any) => r.category === null);
@@ -52,7 +54,7 @@ export async function POST(request: Request) {
     }
     const signals = mergeSignals(sigList);
 
-    const labour = estimateLabour(signals, DEFAULT_ASSUMPTIONS);
+    const labour = estimateLabour(signals, assumptions);
     if (labour.days > 0) {
       const detail = labour.breakdown.map((b) => `${b.label}: ${b.days}d`).join(", ");
       allLines.push({
