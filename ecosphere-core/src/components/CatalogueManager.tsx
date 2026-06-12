@@ -335,8 +335,10 @@ export default function CatalogueManager({
                 {shown.map((p) => (
                   <tr key={p.id} className={`border-t border-gray-100 ${!p.active ? "opacity-50" : ""}`}>
                     <td className="px-3 py-2">
-                      <div className="font-medium text-gray-800">{p.name}</div>
-                      <div className="text-[11px] text-gray-400">{p.sku ?? "no SKU"} · {p.unit} · {supplierName(p.supplier_id)}</div>
+                      <input defaultValue={p.name} title="Click to edit the name"
+                        className="w-full min-w-[15rem] rounded border border-transparent px-1.5 py-1 text-sm font-medium text-gray-800 hover:border-gray-200 focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600"
+                        onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== p.name) updateProduct(p.id, { name: v }); else if (!v) e.target.value = p.name; }} />
+                      <div className="px-1.5 text-[11px] text-gray-400">{p.sku ?? "no SKU"} · {p.unit} · {supplierName(p.supplier_id)}</div>
                     </td>
                     <td className="px-3 py-2">
                       <input defaultValue={p.manufacturer ?? ""} list="mfr-list" placeholder="—"
