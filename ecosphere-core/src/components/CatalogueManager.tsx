@@ -65,6 +65,91 @@ export default function CatalogueManager({
   const setS = (k: keyof typeof ns) => (e: React.ChangeEvent<any>) => setNs((f) => ({ ...f, [k]: e.target.value }));
   const [newKitName, setNewKitName] = useState("");
 
+  // ---- CSV import / export ---------------------------------------------------
+  const [importPreview, setImportPreview] = useState<{ inserts: any[]; updates: any[]; errors: string[]; skipped: number } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const VALID_CATS = useMemo(() => new Set(PRODUCT_CATEGORY_OPTIONS.map(([v]) => v)), []);
+
+  function exportCsv() {
+    const cols = ["sku", "name", "manufacturer", "category", "cost_price", "unit", "vat_rate", "active"];
+    const esc = (v: any) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const lines = [cols.join(",")].concat(
+      products.map((p) => [p.sku, p.name, p.manufacturer, p.category, p.cost_price, p.unit, p.vat_rate, p.active].map(esc).join(","))
+    );
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "catalogue.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+
+  function parseCsv(text: string): string[][] {
+    const rows: string[][] = []; let row: string[] = []; let cur = ""; let q = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+      else if (c === '"') q = true;
+      else if (c === ",") { row.push(cur); cur = ""; }
+      else if (c === "\n") { row.push(cur); rows.push(row); row = []; cur = ""; }
+      else if (c !== "\r") cur += c;
+    }
+    if (cur !== "" || row.length) { row.push(cur); rows.push(row); }
+    return rows;
+  }
+
+  function onImportFile(file: File) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const rows = parseCsv(String(reader.result || "")).filter((r) => r.some((c) => c.trim() !== ""));
+      if (rows.length < 2) { setMsg("That CSV looks empty."); return; }
+      const header = rows[0].map((h) => h.trim().toLowerCase());
+      const idx = (n: string) => header.indexOf(n);
+      const iName = idx("name"), iSku = idx("sku"), iMfr = idx("manufacturer"), iCat = idx("category"),
+        iCost = idx("cost_price"), iUnit = idx("unit"), iVat = idx("vat_rate"), iActive = idx("active"), iInc = idx("include");
+      if (iName < 0) { setMsg("CSV needs at least a 'name' column."); return; }
+      const bySku = new Map(products.filter((p) => p.sku).map((p) => [String(p.sku), p]));
+      const inserts: any[] = [], updates: any[] = [], errors: string[] = [];
+      let skipped = 0;
+      for (let i = 1; i < rows.length; i++) {
+        const r = rows[i]; const g = (j: number) => (j >= 0 ? (r[j] ?? "").trim() : "");
+        // If an 'include' column is present, only import rows explicitly ticked.
+        if (iInc >= 0 && !["y", "yes", "true", "1", "x"].includes(g(iInc).toLowerCase())) { skipped++; continue; }
+        const name = g(iName); if (!name) { skipped++; continue; }
+        const cat = (g(iCat).toLowerCase() || "other") as ProductCategory;
+        if (!VALID_CATS.has(cat)) { errors.push(`"${name}": unknown category "${g(iCat)}"`); continue; }
+        const sku = g(iSku) || null;
+        const rec = {
+          sku, name, manufacturer: g(iMfr) || null, category: cat,
+          cost_price: Number(g(iCost) || 0) || 0, unit: g(iUnit) || "each", vat_rate: Number(g(iVat) || 20) || 20,
+          active: iActive >= 0 ? !["n", "no", "false", "0"].includes(g(iActive).toLowerCase()) : true,
+        };
+        const existing = sku ? bySku.get(sku) : undefined;
+        if (existing) updates.push({ ...rec, _old_cost: existing.cost_price }); else inserts.push(rec);
+      }
+      setImportPreview({ inserts, updates, errors, skipped });
+    };
+    reader.readAsText(file);
+  }
+
+  async function applyImport() {
+    if (!importPreview) return;
+    setImporting(true); setMsg(null);
+    const clean = (p: any) => ({ sku: p.sku, name: p.name, manufacturer: p.manufacturer, category: p.category, cost_price: p.cost_price, unit: p.unit, vat_rate: p.vat_rate, active: p.active });
+    const withSku = [...importPreview.updates, ...importPreview.inserts.filter((p) => p.sku)].map(clean);
+    const noSku = importPreview.inserts.filter((p) => !p.sku).map(clean);   // sku stays null
+    const chunk = (a: any[], n: number) => { const o: any[][] = []; for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n)); return o; };
+    try {
+      for (const c of chunk(withSku, 200)) { const { error } = await supabase.from("products").upsert(c, { onConflict: "sku" }); if (error) throw error; }
+      for (const c of chunk(noSku, 200)) { const { error } = await supabase.from("products").insert(c); if (error) throw error; }
+      const { data } = await supabase.from("products").select("*").order("category").order("name");
+      if (data) setProducts(data as Product[]);
+      setMsg(`Imported: ${importPreview.updates.length} updated, ${importPreview.inserts.length} added.`);
+      setImportPreview(null);
+    } catch (e: any) { setMsg(`Import failed: ${e.message}`); }
+    setImporting(false);
+  }
+
   async function addProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!np.name.trim()) { setMsg("Name required."); return; }
@@ -221,6 +306,14 @@ export default function CatalogueManager({
               <option value="">All manufacturers</option>
               {manufacturers.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
+            <div className="ml-auto flex items-center gap-2">
+              <button onClick={exportCsv} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Export CSV</button>
+              <label className="cursor-pointer rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                Import CSV
+                <input type="file" accept=".csv,text/csv" hidden
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) onImportFile(f); e.currentTarget.value = ""; }} />
+              </label>
+            </div>
           </div>
 
           <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
@@ -375,6 +468,43 @@ export default function CatalogueManager({
             </tbody>
           </table>
           <p className="px-3 py-2 text-[11px] text-gray-400">Sell price = cost × (1 + markup ÷ 100). Per-line overrides happen on a proposal.</p>
+        </div>
+      )}
+
+      {importPreview && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 p-4">
+          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-base font-semibold text-gray-900">Import preview</h2>
+            <p className="mt-1 text-sm text-gray-500">Matched on SKU. Nothing is saved until you confirm.</p>
+            <div className="mt-3 grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-lg bg-teal-50 p-3"><p className="text-xl font-semibold text-teal-700">{importPreview.inserts.length}</p><p className="text-[11px] text-gray-500">to add</p></div>
+              <div className="rounded-lg bg-amber-50 p-3"><p className="text-xl font-semibold text-amber-700">{importPreview.updates.length}</p><p className="text-[11px] text-gray-500">to update</p></div>
+              <div className="rounded-lg bg-gray-50 p-3"><p className="text-xl font-semibold text-gray-600">{importPreview.skipped}</p><p className="text-[11px] text-gray-500">skipped</p></div>
+            </div>
+            {importPreview.updates.length > 0 && (
+              <div className="mt-3 max-h-40 overflow-y-auto rounded-lg border border-gray-100 text-xs">
+                {importPreview.updates.slice(0, 50).map((u, i) => (
+                  <div key={i} className="flex items-center justify-between border-t border-gray-100 px-2.5 py-1 first:border-t-0">
+                    <span className="truncate text-gray-700">{u.name}</span>
+                    <span className="shrink-0 text-gray-500">{gbp(Number(u._old_cost))} → <span className={Number(u.cost_price) !== Number(u._old_cost) ? "font-semibold text-gray-900" : ""}>{gbp(Number(u.cost_price))}</span></span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {importPreview.errors.length > 0 && (
+              <div className="mt-3 max-h-24 overflow-y-auto rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">
+                {importPreview.errors.length} row(s) skipped for errors:
+                {importPreview.errors.slice(0, 10).map((e, i) => <div key={i}>· {e}</div>)}
+              </div>
+            )}
+            <div className="mt-4 flex justify-end gap-2">
+              <button onClick={() => setImportPreview(null)} disabled={importing} className="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+              <button onClick={applyImport} disabled={importing || (importPreview.inserts.length + importPreview.updates.length === 0)}
+                className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60" style={{ backgroundColor: "#1B7A6E" }}>
+                {importing ? "Importing…" : `Import ${importPreview.inserts.length + importPreview.updates.length}`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
