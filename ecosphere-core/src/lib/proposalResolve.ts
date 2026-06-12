@@ -69,17 +69,33 @@ export function linesFromPayload(payload: any, ctx: ResolveContext): { lines: Dr
   const placeholder = (cat: ProductCategory, description: string, qty: number, src: LineSource = "design") =>
     push({ product_id: null, description, category: cat, qty, unit: "each", unit_cost: 0, markup_pct: markupFor(cat), vat_rate: 20, source: src, needs_sku: true });
 
+  // Seed a matched unit's own kit (e.g. a Vaillant heat pump's controller) on
+  // top of the universal base kit. No-op for products without a per-unit kit.
+  const addUnitKit = (p: any) => {
+    if (!p?.kit_template_id) return;
+    for (const it of itemsForTemplate(p.kit_template_id)) {
+      if (it.products) lineFromProduct(it.products, Number(it.qty), "base_kit");
+    }
+  };
+
   const matchByModel = (cat: ProductCategory, model: any) => {
     if (!model) return null;
     const t = norm(model);
     if (t.length < 4) return null;
     return prods.find((p: any) => p.category === cat && norm(p.attrs?.mfr_code) === t) ?? null;
   };
+  // Boost candidates whose manufacturer appears in the spec label (brand-aware,
+  // since brand names are stripped from token matching).
+  const brandBoost = (p: any, label?: string | null) => {
+    const mfr = String(p.manufacturer ?? "").toUpperCase();
+    if (mfr.length < 3) return 0;
+    return String(label ?? "").toUpperCase().includes(mfr) ? 3 : 0;
+  };
   const bestByTokens = (cands: any[], label?: string | null, preferOutdoor = false) => {
     const toks = tokens(label);
     const scored = cands.map((p: any) => {
       const nameToks = new Set(tokens(p.name));
-      let s = 0;
+      let s = brandBoost(p, label);
       for (const t of toks) if (nameToks.has(t)) s += 2;
       if (preferOutdoor && p.attrs?.kind === "outdoor") s += 1;
       return { p, s, cost: Number(p.cost_price) };
@@ -94,7 +110,7 @@ export function linesFromPayload(payload: any, ctx: ResolveContext): { lines: Dr
     if (!toks.length) return null;
     const scored = cands.map((p: any) => {
       const nameToks = new Set(tokens(p.name));
-      let sc = 0; for (const t of toks) if (nameToks.has(t)) sc += 2;
+      let sc = brandBoost(p, label); for (const t of toks) if (nameToks.has(t)) sc += 2;
       return { p, sc, cost: Number(p.cost_price) };
     }).filter((x) => x.sc > 0).sort((a, b) => b.sc - a.sc || a.cost - b.cost);
     return scored[0]?.p ?? null;
@@ -118,7 +134,7 @@ export function linesFromPayload(payload: any, ctx: ResolveContext): { lines: Dr
       signals.panelCount = Number(pa.count ?? 0);
       const desc = ["Solar panel", pa.make, pa.model, pa.watts ? `${pa.watts}W` : ""].filter(Boolean).join(" ").trim();
       const r = tryMatch("solar_panel", pa.model, pa.make);
-      if (r) lineFromProduct(r.p, Number(pa.count ?? 1), "design", !r.exact);
+      if (r) { lineFromProduct(r.p, Number(pa.count ?? 1), "design", !r.exact); addUnitKit(r.p); }
       else placeholder("solar_panel", `${desc} — needs SKU`, Number(pa.count ?? 1));
     }
     if (payload.inverter) {
@@ -126,7 +142,7 @@ export function linesFromPayload(payload: any, ctx: ResolveContext): { lines: Dr
       const iv = payload.inverter;
       const desc = ["Inverter", iv.label, iv.model, iv.kw ? `${iv.kw}kW` : ""].filter(Boolean).join(" ").trim();
       const r = tryMatch("inverter", iv.model, iv.label);
-      if (r) lineFromProduct(r.p, Number(iv.count ?? 1), "design", !r.exact);
+      if (r) { lineFromProduct(r.p, Number(iv.count ?? 1), "design", !r.exact); addUnitKit(r.p); }
       else placeholder("inverter", `${desc} — needs SKU`, Number(iv.count ?? 1));
     }
     if (payload.battery) {
@@ -134,7 +150,7 @@ export function linesFromPayload(payload: any, ctx: ResolveContext): { lines: Dr
       const ba = payload.battery;
       const desc = ["Battery", ba.label, ba.model, ba.usable_kwh ? `${ba.usable_kwh}kWh usable` : ""].filter(Boolean).join(" ").trim();
       const r = tryMatch("battery", ba.model, ba.label);
-      if (r) lineFromProduct(r.p, Number(ba.count ?? 1), "design", !r.exact);
+      if (r) { lineFromProduct(r.p, Number(ba.count ?? 1), "design", !r.exact); addUnitKit(r.p); }
       else placeholder("battery", `${desc} — needs SKU`, Number(ba.count ?? 1));
     }
     for (const c of payload.components ?? []) {
@@ -183,12 +199,12 @@ export function linesFromPayload(payload: any, ctx: ResolveContext): { lines: Dr
       if (cat === "heat_pump" || cat === "cylinder") {
         if (cat === "heat_pump") signals.hasHeatPump = true; else signals.hasCylinder = true;
         const r = cat === "heat_pump" ? pickHeatPump(item) : pickCylinder(item);
-        if (r && r.product) lineFromProduct(r.product, qty, "design", !r.exact);
+        if (r && r.product) { lineFromProduct(r.product, qty, "design", !r.exact); addUnitKit(r.product); }
         else placeholder(cat, item.label || item.model_number || `${cat} (needs SKU)`, qty);
       } else {
         const cands = prods.filter((p: any) => p.category === cat);
         const m = cands.length === 1 ? cands[0] : bestByTokens(cands, item.label || item.model);
-        if (m) lineFromProduct(m, qty, "design", cands.length !== 1);
+        if (m) { lineFromProduct(m, qty, "design", cands.length !== 1); addUnitKit(m); }
         else placeholder(cat, item.label || `${cat} (needs SKU)`, qty);
       }
     }

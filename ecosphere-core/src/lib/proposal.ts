@@ -26,6 +26,8 @@ export interface Product {
   name: string;
   category: ProductCategory;
   supplier_id: string | null;
+  manufacturer: string | null;
+  kit_template_id: string | null;   // optional per-unit kit
   unit: string;
   cost_price: number;
   vat_rate: number;
@@ -44,6 +46,14 @@ export interface KitTemplate {
   key: string;
   name: string;
   notes: string | null;
+}
+
+export interface KitTemplateItem {
+  id: number;
+  template_id: string;
+  product_id: string;
+  qty: number;
+  products?: Product;   // joined product, when selected with `*, products(*)`
 }
 
 export interface MappingRule {
