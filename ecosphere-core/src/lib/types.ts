@@ -100,6 +100,8 @@ export interface Deal {
   pipeline_stage_id: string | null;
   pipeline_stage_changed_at: string;
   ghl_opportunity_id: string | null;
+  job_status: string | null;        // latest Dispatch job status (reverse sync)
+  job_status_at: string | null;
   created_at: string;
   updated_at: string;
   tags?: Tag[];

@@ -18,6 +18,18 @@ const CATEGORY_LABELS: Record<TagCategory, string> = {
 const ACTIVITY_TYPES: ActivityType[] = ["note", "call", "email", "sms", "meeting"];
 const BUS_STATUSES: BusStatus[] = ["applied", "issued", "redeemed", "paid", "expired", "rejected"];
 
+// Dispatch job lifecycle, mirrored onto the deal by the reverse sync
+// (POST /api/dispatch/job-update -> deals.job_status). Plain text, so fall back
+// to a humanised label for any value not in this map.
+const JOB_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft", offered: "Offered", changes_proposed: "Changes proposed",
+  accepted: "Accepted", confirmed: "Confirmed", declined: "Declined",
+  expired: "Expired", completed: "Completed", ready_for_handover: "Ready for handover",
+};
+function jobStatusLabel(s: string) {
+  return JOB_STATUS_LABELS[s] ?? s.replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
+}
+
 export default function DealDetail({
   initialDeal, initialActivities, history, allTags, stages, initialVouchers, dealProposals,
 }: {
@@ -156,6 +168,17 @@ export default function DealDetail({
 
           <div className="rounded-xl border border-gray-200 bg-white p-5">
             <h2 className="mb-3 text-sm font-semibold text-gray-800">Customer &amp; job</h2>
+            {deal.job_status && (
+              <div className="mb-3 flex flex-wrap items-center gap-2 rounded-md bg-teal-50 px-3 py-2 text-sm">
+                <span className="h-2 w-2 shrink-0 rounded-full bg-teal-600" />
+                <span className="font-medium text-teal-800">Install: {jobStatusLabel(deal.job_status)}</span>
+                {deal.job_status_at && (
+                  <span className="text-xs text-teal-700/70">
+                    updated {new Date(deal.job_status_at).toLocaleDateString("en-GB")}
+                  </span>
+                )}
+              </div>
+            )}
             {editing ? (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="sm:col-span-2"><label className={lbl}>Customer name</label><input className={field} value={form.customer_name} onChange={set("customer_name")} /></div>
