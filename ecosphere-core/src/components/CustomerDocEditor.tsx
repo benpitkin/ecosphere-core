@@ -24,6 +24,7 @@ export default function CustomerDocEditor({ proposalId, printHref }: { proposalI
       if (d.content) setC(d.content);
       setHasReport(!!d.hasReport);
     }).catch(() => setMsg("Couldn't load content"));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch content once when the editor opens; guarded by `c`
   }, [open]);
 
   function set<K extends keyof CustomerContent>(k: K, v: CustomerContent[K]) { setC((p) => p ? { ...p, [k]: v } : p); }

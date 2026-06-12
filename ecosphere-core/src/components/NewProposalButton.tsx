@@ -55,6 +55,7 @@ export default function NewProposalButton() {
   useEffect(() => {
     if (!open || deals.length) return;
     supabase.from("deals").select("id, customer_name").order("customer_name").then(({ data }) => setDeals((data ?? []).filter((d: any) => d.customer_name) as any));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetch deals once when the dialog opens; guarded by deals.length, supabase client is stable
   }, [open]);
 
   function toggle(k: string) { setSel((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n; }); }
@@ -120,10 +121,10 @@ export default function NewProposalButton() {
         <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-black/40 p-4">
           <div className="my-8 w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-semibold text-gray-900">New proposal</h2>
-            <p className="mb-4 text-sm text-gray-500">Pick the technologies, drop in any design docs, and we'll build one combined draft.</p>
+            <p className="mb-4 text-sm text-gray-500">Pick the technologies, drop in any design docs, and we&apos;ll build one combined draft.</p>
             {err && <p className="mb-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{err}</p>}
 
-            <label className="mb-1 block text-xs font-medium text-gray-600">Who's it for?</label>
+            <label className="mb-1 block text-xs font-medium text-gray-600">Who&apos;s it for?</label>
             <input list="deal-list" value={who} onChange={(e) => setWho(e.target.value)} placeholder="Pick a customer or type a name" className={field} />
             <datalist id="deal-list">{deals.map((d) => <option key={d.id} value={d.customer_name} />)}</datalist>
 

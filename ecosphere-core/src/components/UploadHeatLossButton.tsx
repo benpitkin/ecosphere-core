@@ -150,7 +150,7 @@ export default function UploadHeatLossButton({ dealId }: { dealId?: string | nul
                     {result.warnings.map((w: string, i: number) => <div key={i}>⚠ {w}</div>)}
                   </div>
                 )}
-                <p className="text-xs text-gray-400">You'll be able to adjust every line, choose exact SKUs and tweak labour on the next screen before anything is sent.</p>
+                <p className="text-xs text-gray-400">You&apos;ll be able to adjust every line, choose exact SKUs and tweak labour on the next screen before anything is sent.</p>
                 <div className="flex justify-end gap-2">
                   <button onClick={() => { setResult(null); setErr(null); }} className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Choose another</button>
                   <button onClick={build} disabled={!!busy} className="rounded-lg px-4 py-2 text-sm font-semibold text-white disabled:opacity-60" style={{ backgroundColor: "#1B7A6E" }}>
