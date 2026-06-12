@@ -5,6 +5,7 @@ import type { Product, Supplier, MarginRule, ProductCategory, KitTemplate, KitTe
 import { PRODUCT_CATEGORY_LABELS, PRODUCT_CATEGORY_OPTIONS } from "@/lib/proposal";
 import { gbp } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
+import { detectManufacturer } from "@/lib/manufacturers";
 
 type Tab = "products" | "kits" | "suppliers" | "margins";
 
@@ -48,6 +49,18 @@ export default function CatalogueManager({
 
   const [np, setNp] = useState({ name: "", manufacturer: "", sku: "", category: "consumable" as ProductCategory, supplier_id: "", unit: "each", cost_price: "", vat_rate: "20" });
   const setF = (k: keyof typeof np) => (e: React.ChangeEvent<any>) => setNp((f) => ({ ...f, [k]: e.target.value }));
+  // Auto-suggest manufacturer from the name, but only while the user hasn't
+  // overridden it (their typed value is kept the moment it differs).
+  const [autoMfr, setAutoMfr] = useState("");
+  function onNameChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const name = e.target.value;
+    const suggested = detectManufacturer(name) ?? "";
+    setNp((f) => {
+      const userOverrode = f.manufacturer !== "" && f.manufacturer !== autoMfr;
+      return { ...f, name, manufacturer: userOverrode ? f.manufacturer : suggested };
+    });
+    setAutoMfr(suggested);
+  }
   const [ns, setNs] = useState({ name: "", contact: "", email: "" });
   const setS = (k: keyof typeof ns) => (e: React.ChangeEvent<any>) => setNs((f) => ({ ...f, [k]: e.target.value }));
   const [newKitName, setNewKitName] = useState("");
@@ -183,8 +196,8 @@ export default function CatalogueManager({
       {tab === "products" && (
         <>
           <form onSubmit={addProduct} className="flex flex-wrap items-end gap-2 rounded-xl border border-gray-200 bg-white p-3">
-            <input className={`${field} flex-1`} placeholder="Product name" value={np.name} onChange={setF("name")} />
-            <input className={`${field} w-32`} placeholder="Manufacturer" list="mfr-list" value={np.manufacturer} onChange={setF("manufacturer")} />
+            <input className={`${field} flex-1`} placeholder="Product name" value={np.name} onChange={onNameChange} />
+            <input className={`${field} w-32`} placeholder="Manufacturer (auto)" list="mfr-list" value={np.manufacturer} onChange={setF("manufacturer")} />
             <input className={`${field} w-28`} placeholder="SKU" value={np.sku} onChange={setF("sku")} />
             <select className={field} value={np.category} onChange={setF("category")}>
               {PRODUCT_CATEGORY_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
