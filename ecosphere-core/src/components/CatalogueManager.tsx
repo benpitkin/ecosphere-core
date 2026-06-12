@@ -345,7 +345,12 @@ export default function CatalogueManager({
                         className="w-28 rounded border border-gray-200 px-2 py-1 text-sm focus:border-teal-600 focus:outline-none"
                         onBlur={(e) => { const v = e.target.value.trim(); if (v !== (p.manufacturer ?? "")) updateProduct(p.id, { manufacturer: v || null }); }} />
                     </td>
-                    <td className="px-3 py-2 text-gray-600">{PRODUCT_CATEGORY_LABELS[p.category]}</td>
+                    <td className="px-3 py-2">
+                      <select value={p.category} onChange={(e) => updateProduct(p.id, { category: e.target.value as ProductCategory })}
+                        className="w-full min-w-[7rem] rounded border border-transparent px-1.5 py-1 text-sm text-gray-600 hover:border-gray-200 focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600">
+                        {PRODUCT_CATEGORY_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                      </select>
+                    </td>
                     <td className="px-3 py-2">
                       {UNIT_CATEGORIES.has(p.category) ? (
                         <select value={p.kit_template_id ?? ""} onChange={(e) => updateProduct(p.id, { kit_template_id: e.target.value || null })}
