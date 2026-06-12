@@ -11,9 +11,11 @@
 -- SECURITY DEFINER, EXCEPTION WHEN OTHERS so it can NEVER block a job write.
 -- Only fires on a genuine transition and only when ghl_opportunity_id is set.
 --
--- SECRET: read from a DB setting, not hardcoded. Set it once per database
--- (same shared secret used by the forward direction):
---   alter database postgres set app.dispatch_ingest_secret = '<the-shared-secret>';
+-- SECRET: read from Supabase Vault (encrypted at rest), not hardcoded and not a
+-- plaintext GUC. Create the secret once on the Dispatch project (same shared
+-- secret used by the forward direction):
+--   select vault.create_secret('<the-shared-secret>', 'dispatch_ingest_secret',
+--                              'Core<->Dispatch reverse-sync shared secret');
 --
 -- Idempotent.
 -- =============================================================================
@@ -39,7 +41,11 @@ begin
   end if;
   if new.ghl_opportunity_id is null then return new; end if;
 
-  v_secret := current_setting('app.dispatch_ingest_secret', true);
+  -- Shared secret from Supabase Vault (encrypted at rest), not a plaintext GUC.
+  select decrypted_secret into v_secret
+    from vault.decrypted_secrets
+   where name = 'dispatch_ingest_secret'
+   limit 1;
 
   perform net.http_post(
     url := 'https://ecosphere-core.vercel.app/api/dispatch/job-update',
