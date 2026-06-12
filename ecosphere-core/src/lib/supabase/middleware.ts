@@ -37,7 +37,8 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith("/p/") ||
     pathname.startsWith("/api/proposal/") ||
     pathname.startsWith("/api/webhooks/") ||
-    pathname.startsWith("/api/cron/");
+    pathname.startsWith("/api/cron/") ||
+    pathname.startsWith("/api/dispatch/");
 
   // Not signed in and trying to reach an app page → send to login.
   if (!user && !isAuthRoute && !isPublicRoute) {
