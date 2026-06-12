@@ -25,6 +25,7 @@ Sales/CRM hub for **EcoSphere Energy** (UK MCS renewable installer: heat pumps, 
 - The Dispatch trigger **swallows errors by design** (never blocks a deal write) — failures are silent; test by reading `jobs` back.
 - Integration shared secret is currently **hardcoded** in the edge function + trigger → move to Vault.
 - Windows clone has CRLF/LF noise; add `.gitattributes` (`* text=auto eol=lf`).
+- **RLS is intentionally permissive** — every table has `<table>_all ... USING(true) WITH CHECK(true)` for `authenticated`. This is a single-tenant internal tool (only trusted staff log in; confirmed 2026-06-12). Supabase advisor lint 0024 flags it — **expected, do not "fix"**. Only revisit if external/customer logins are ever added.
 
 ## Immediate state
 - Commit **`4753835`** (proposal‑builder upgrade: editable customer content + Performance charts + gated MCS PDF) is present on remote `origin/main` (`git branch -r --contains 4753835` → `origin/main`; local HEAD = origin/main, 0 ahead/0 behind, checked 2026-06-11). Confirm the Vercel deploy is green in the dashboard.
