@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { Product, Supplier, MarginRule, KitTemplate, KitTemplateItem } from "@/lib/proposal";
 import CatalogueManager from "@/components/CatalogueManager";
+import BulkAssetFiller from "@/components/BulkAssetFiller";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +16,15 @@ export default async function CataloguePage() {
   ]);
 
   return (
-    <CatalogueManager
-      initialProducts={(products ?? []) as Product[]}
-      suppliers={(suppliers ?? []) as Supplier[]}
-      initialMargins={(margins ?? []) as MarginRule[]}
-      initialKits={(kits ?? []) as KitTemplate[]}
-      initialKitItems={(kitItems ?? []) as KitTemplateItem[]}
-    />
+    <>
+      <BulkAssetFiller products={(products ?? []) as Product[]} />
+      <CatalogueManager
+        initialProducts={(products ?? []) as Product[]}
+        suppliers={(suppliers ?? []) as Supplier[]}
+        initialMargins={(margins ?? []) as MarginRule[]}
+        initialKits={(kits ?? []) as KitTemplate[]}
+        initialKitItems={(kitItems ?? []) as KitTemplateItem[]}
+      />
+    </>
   );
 }
