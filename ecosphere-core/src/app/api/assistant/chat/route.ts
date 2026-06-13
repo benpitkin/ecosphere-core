@@ -169,7 +169,12 @@ async function runTool(name: string, input: any, admin: ReturnType<typeof create
       const id = String(input?.id ?? "");
       if (!id) return "id is required";
       const patch: any = {};
-      for (const f of ["name", "manufacturer", "category", "sku", "unit"] as const) {
+      // name/category/unit are NOT NULL — only set when non-empty.
+      for (const f of ["name", "category", "unit"] as const) {
+        if (typeof input?.[f] === "string" && input[f].trim()) patch[f] = input[f].trim();
+      }
+      // manufacturer/sku may be cleared to null.
+      for (const f of ["manufacturer", "sku"] as const) {
         if (typeof input?.[f] === "string") patch[f] = input[f].trim() || null;
       }
       if (typeof input?.cost_price === "number") patch.cost_price = input.cost_price;
