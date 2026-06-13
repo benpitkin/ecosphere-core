@@ -25,6 +25,11 @@ export default function PartDetail({
   const [p, setP] = useState<Product>(initialProduct);
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [finding, setFinding] = useState(false);
+  const [cand, setCand] = useState<
+    | null
+    | { found: boolean; reason?: string; title?: string; score?: number; imageUrl?: string | null; datasheetUrl?: string | null; productUrl?: string }
+  >(null);
 
   const markup = Number((margins.find((m) => m.category === p.category) ?? margins.find((m) => m.category === null))?.markup_pct ?? 0);
   const attrs = (p.attrs ?? {}) as any;
@@ -45,6 +50,37 @@ export default function PartDetail({
     const { data } = supabase.storage.from("part-images").getPublicUrl(path);
     const url = `${data.publicUrl}?v=${Date.now()}`;
     await save({ attrs: { ...attrs, [kind === "image" ? "image_url" : "datasheet_url"]: url } } as any);
+    setBusy(null);
+  }
+
+  async function findAssets() {
+    setFinding(true); setMsg(null); setCand(null);
+    try {
+      const res = await fetch("/api/parts/find-assets", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id }),
+      });
+      setCand(await res.json());
+    } catch (e: any) { setMsg(e?.message ?? "Lookup failed"); }
+    setFinding(false);
+  }
+
+  async function attach(which: "image" | "datasheet" | "both") {
+    if (!cand?.found) return;
+    setBusy("attach"); setMsg(null);
+    const payload: any = { id: p.id };
+    if (which !== "datasheet" && cand.imageUrl) payload.imageUrl = cand.imageUrl;
+    if (which !== "image" && cand.datasheetUrl) payload.datasheetUrl = cand.datasheetUrl;
+    try {
+      const res = await fetch("/api/parts/attach-assets", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+      });
+      const j = await res.json();
+      if (j.error) setMsg(j.error);
+      else {
+        setP((prev) => ({ ...prev, attrs: { ...(prev.attrs ?? {}), ...(j.image_url ? { image_url: j.image_url } : {}), ...(j.datasheet_url ? { datasheet_url: j.datasheet_url } : {}) } } as any));
+        setMsg("Attached."); setCand(null);
+      }
+    } catch (e: any) { setMsg(e?.message ?? "Attach failed"); }
     setBusy(null);
   }
 
@@ -79,7 +115,45 @@ export default function PartDetail({
               <input defaultValue={attrs.image_url ?? ""} placeholder="or paste image URL" className="flex-1 rounded border border-gray-200 px-2 py-1 text-[11px] focus:border-teal-600 focus:outline-none"
                 onBlur={(e) => setAttr("image_url", e.target.value.trim())} />
             </div>
+            <button type="button" onClick={findAssets} disabled={finding}
+              className="mt-2 w-full rounded-lg border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:opacity-50">
+              {finding ? "Searching supplier…" : "✨ Find image & datasheet online"}
+            </button>
+            {!p.sku && <p className="mt-1 text-[11px] text-gray-400">Add a SKU to enable lookup.</p>}
           </div>
+
+          {cand && (
+            <div className="rounded-xl border border-teal-200 bg-teal-50/40 p-4 text-sm">
+              {!cand.found ? (
+                <p className="text-gray-600">
+                  No match{cand.reason ? `: ${cand.reason}` : "."}
+                  {cand.productUrl && <> · <a className="text-teal-700 underline" href={cand.productUrl} target="_blank" rel="noreferrer">check page</a></>}
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-start gap-3">
+                    {cand.imageUrl && (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img src={cand.imageUrl} alt="" className="h-16 w-16 rounded bg-white object-contain" />
+                    )}
+                    <div className="min-w-0">
+                      <p className="font-medium text-gray-800">{cand.title || "Product found"}</p>
+                      <p className={(cand.score ?? 0) >= 0.5 ? "text-xs text-teal-700" : "text-xs text-amber-600"}>
+                        Match {Math.round((cand.score ?? 0) * 100)}%{(cand.score ?? 0) < 0.5 && " — low confidence, check this is the right part"}
+                      </p>
+                      <a href={cand.productUrl} target="_blank" rel="noreferrer" className="text-xs text-teal-700 underline">view supplier page →</a>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {cand.imageUrl && <button type="button" onClick={() => attach("image")} disabled={busy === "attach"} className="rounded border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-50">Attach image</button>}
+                    {cand.datasheetUrl && <button type="button" onClick={() => attach("datasheet")} disabled={busy === "attach"} className="rounded border border-gray-300 bg-white px-2 py-1 text-xs hover:bg-gray-50">Attach datasheet</button>}
+                    {cand.imageUrl && cand.datasheetUrl && <button type="button" onClick={() => attach("both")} disabled={busy === "attach"} className="rounded bg-teal-600 px-2 py-1 text-xs font-medium text-white hover:bg-teal-700">{busy === "attach" ? "Attaching…" : "Attach both"}</button>}
+                    <button type="button" onClick={() => setCand(null)} className="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100">Dismiss</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <h2 className="text-sm font-semibold text-gray-800">Datasheet</h2>
