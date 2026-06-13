@@ -212,6 +212,18 @@ export async function POST(request: Request) {
 
   const client = new Anthropic();
   const admin = createAdminClient();
+
+  // If the user is on a part page, tell the assistant which part — so "this
+  // part" / "this one" resolves without them naming it.
+  let system = SYSTEM;
+  const ctxId = body?.context?.partId;
+  if (typeof ctxId === "string" && ctxId) {
+    const { data: cp } = await admin.from("products").select("id, name, sku, manufacturer").eq("id", ctxId).maybeSingle();
+    if (cp) {
+      system += `\n\nCURRENT CONTEXT: The user is viewing the part "${cp.name}"${cp.manufacturer ? ` (${cp.manufacturer})` : ""}${cp.sku ? `, SKU ${cp.sku}` : ""}, product id ${cp.id}. If they say "this part" or "this one", they mean this part — use this id for find_part_assets / attach_part_assets / get_part.`;
+    }
+  }
+
   // Leave headroom under the 60s function cap so we return a useful message
   // rather than letting Vercel hard-kill the request mid-tool-loop.
   const deadline = Date.now() + 50_000;
@@ -227,7 +239,7 @@ export async function POST(request: Request) {
         model: "claude-opus-4-8",
         max_tokens: 8000,
         thinking: { type: "adaptive" },
-        system: SYSTEM,
+        system,
         tools,
         messages,
       });

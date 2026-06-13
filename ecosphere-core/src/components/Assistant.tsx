@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 
 type Msg = { role: "user" | "assistant" | "error"; content: string };
 
@@ -35,6 +36,10 @@ export default function Assistant() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+  // When on a part page (/catalogue/<uuid>), hand the part to the assistant so
+  // "this part" resolves without the user naming it.
+  const partId = pathname?.match(/\/catalogue\/([0-9a-f-]{36})/i)?.[1];
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -53,6 +58,7 @@ export default function Assistant() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: next.filter((m) => m.role !== "error").map((m) => ({ role: m.role, content: m.content })),
+          context: partId ? { partId } : undefined,
         }),
       });
       const j = await res.json();
