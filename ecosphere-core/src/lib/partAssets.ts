@@ -44,7 +44,7 @@ export async function attachPartAssets(
 
   const attrs = { ...((product.attrs as any) ?? {}) };
   if (assets.imageUrl) {
-    const ext = (assets.imageUrl.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+    const ext = (assets.imageUrl.split("?")[0].split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
     attrs.image_url = await rehost(admin, assets.imageUrl, `${id}.${ext}`, "image/jpeg");
   }
   if (assets.datasheetUrl) {

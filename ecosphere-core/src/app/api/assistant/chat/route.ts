@@ -251,14 +251,17 @@ export async function POST(request: Request) {
 
       if (resp.stop_reason === "tool_use") {
         const toolUses = resp.content.filter((b: any) => b.type === "tool_use");
-        messages.push({ role: "assistant", content: resp.content });
-        const results = [];
-        for (const tu of toolUses as any[]) {
-          const out = await runTool(tu.name, tu.input, admin);
-          results.push({ type: "tool_result", tool_use_id: tu.id, content: out });
+        if (toolUses.length > 0) {
+          messages.push({ role: "assistant", content: resp.content });
+          const results = [];
+          for (const tu of toolUses as any[]) {
+            const out = await runTool(tu.name, tu.input, admin);
+            results.push({ type: "tool_result", tool_use_id: tu.id, content: out });
+          }
+          messages.push({ role: "user", content: results });
+          continue;
         }
-        messages.push({ role: "user", content: results });
-        continue;
+        // stop_reason was tool_use but only server tools ran — fall through to text.
       }
       if (resp.stop_reason === "pause_turn") {
         // Server-side tool (web search) hit its loop limit — re-send to resume.
