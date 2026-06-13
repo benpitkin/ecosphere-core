@@ -338,7 +338,16 @@ export default function CatalogueManager({
                       <input defaultValue={p.name} title="Click to edit the name"
                         className="w-full min-w-[15rem] rounded border border-transparent px-1.5 py-1 text-sm font-medium text-gray-800 hover:border-gray-200 focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600"
                         onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== p.name) updateProduct(p.id, { name: v }); else if (!v) e.target.value = p.name; }} />
-                      <div className="px-1.5 text-[11px] text-gray-400">{p.sku ?? "no SKU"} · {p.unit} · {supplierName(p.supplier_id)}</div>
+                      <div className="flex items-center gap-1 px-1 text-[11px] text-gray-400">
+                        <input defaultValue={p.sku ?? ""} placeholder="SKU" title="SKU (must be unique)"
+                          className="w-24 rounded border border-transparent px-1 py-0.5 hover:border-gray-200 focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600"
+                          onBlur={(e) => { const v = e.target.value.trim(); if ((v || null) !== (p.sku ?? null)) updateProduct(p.id, { sku: v || null } as any); }} />
+                        <span>·</span>
+                        <input defaultValue={p.unit} placeholder="unit" title="Unit (e.g. each, m, pair)"
+                          className="w-14 rounded border border-transparent px-1 py-0.5 hover:border-gray-200 focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600"
+                          onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== p.unit) updateProduct(p.id, { unit: v }); else if (!v) e.target.value = p.unit; }} />
+                        <span>· {supplierName(p.supplier_id)}</span>
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       <input defaultValue={p.manufacturer ?? ""} list="mfr-list" placeholder="—"
