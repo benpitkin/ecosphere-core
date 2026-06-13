@@ -30,6 +30,14 @@ export default async function DashboardPage() {
   const openPropValue = openProps.reduce((s: number, t: any) => s + Number(t.total_sell), 0);
   const recentProps = (proposalRows ?? []) as any[];
 
+  // Average deal size is only meaningful over deals that actually carry a value:
+  // ~64% of GHL-imported opportunities have £0, which would drag a naive average
+  // far below a typical real deal.
+  const { data: dealVals } = await supabase.from("deals").select("value_net");
+  const valuedAmounts = (dealVals ?? []).map((d: any) => Number(d.value_net) || 0).filter((v) => v > 0);
+  const valuedCount = valuedAmounts.length;
+  const avgValued = valuedCount ? Math.round(valuedAmounts.reduce((a, b) => a + b, 0) / valuedCount) : 0;
+
   const k = kpis ?? { active_jobs: 0, won_jobs_this_month: 0, won_value_this_month: 0, open_pipeline_value: 0, open_opportunities: 0, contacts_count: 0 };
   const cf = (cashflow ?? []) as { status: string; voucher_count: number; total_amount: number }[];
   const att = (attention ?? []) as { id: string; customer_name: string; stage_label: string | null; value_net: number; postcode: string | null; days_in_stage: number }[];
@@ -44,6 +52,7 @@ export default async function DashboardPage() {
     return { stage: s, count: Number(r?.deal_count ?? 0), value: Number(r?.total_net_value ?? 0) };
   });
   const funnelMax = Math.max(1, ...funnel.map((f) => f.value));
+  const wonValue = funnel.find((f) => f.stage === "won")?.value ?? 0;
 
   // Lead-source breakdown (descending by value).
   const sourceRows = ((bySource ?? []) as { lead_source: LeadSource; deal_count: number; total_net_value: number }[])
@@ -54,10 +63,13 @@ export default async function DashboardPage() {
   const m = metrics ?? { win_rate: 0, won_deals: 0, lost_deals: 0, avg_deal_size: 0 };
   const winRatePct = Math.round(Number(m.win_rate) * 100);
 
+  // Tiles reflect what the data can actually support: every GHL deal was imported
+  // on one date, so "this month" breakdowns aren't real yet, and no deal has a job
+  // status, so "active jobs" can't be derived. These show honest, all-time figures.
   const tiles = [
-    { label: "Active jobs", value: String(k.active_jobs), sub: `${k.won_jobs_this_month} installs this month`, accent: "#64748B" },
-    { label: "Pipeline value", value: gbpK(Number(k.open_pipeline_value)), sub: `${k.open_opportunities} open opportunities`, accent: "#7C3AED" },
-    { label: "Won this month", value: gbpK(Number(k.won_value_this_month)), sub: `${k.won_jobs_this_month} deals closed`, accent: "#1B7A6E" },
+    { label: "Open pipeline", value: gbpK(Number(k.open_pipeline_value)), sub: `${k.open_opportunities} open deals`, accent: "#7C3AED" },
+    { label: "Won (to date)", value: gbpK(wonValue), sub: `${m.won_deals} deals won`, accent: "#1B7A6E" },
+    { label: "Avg deal size", value: gbp(avgValued), sub: `across ${valuedCount} deals with a value`, accent: "#64748B" },
     { label: "Contacts", value: Number(k.contacts_count).toLocaleString("en-GB"), sub: "in your CRM", accent: "#B45309" },
   ];
 
@@ -136,7 +148,7 @@ export default async function DashboardPage() {
               </div>
             ))}
           </div>
-          <p className="mt-3 text-[11px] text-gray-400">{m.won_deals} won &middot; {m.lost_deals} lost &middot; avg {gbp(Number(m.avg_deal_size))} (net)</p>
+          <p className="mt-3 text-[11px] text-gray-400">{m.won_deals} won &middot; {m.lost_deals} lost &middot; avg {gbp(avgValued)} across {valuedCount} valued deals</p>
         </section>
 
         <section className="rounded-xl border border-gray-200 bg-white p-5">
@@ -158,7 +170,7 @@ export default async function DashboardPage() {
               ))}
             </div>
           )}
-          <p className="mt-3 text-[11px] text-gray-400">Net pipeline value attributed to each lead source.</p>
+          <p className="mt-3 text-[11px] text-gray-400">Pipeline value attributed to each lead source.</p>
         </section>
       </div>
 
@@ -225,7 +237,7 @@ export default async function DashboardPage() {
             <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">{att.length}</span>
           </div>
           {att.length === 0 ? (
-            <p className="py-3 text-sm text-gray-400">Inbox zero. Nothing stale.</p>
+            <p className="py-3 text-sm text-gray-400">Nothing flagged as stale (needs stage-change dates from GHL to track this fully).</p>
           ) : (
             <ul className="divide-y divide-gray-100">
               {att.map((d) => (
