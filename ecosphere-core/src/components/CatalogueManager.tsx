@@ -31,6 +31,7 @@ export default function CatalogueManager({
   const [msg, setMsg] = useState<string | null>(null);
   const [filter, setFilter] = useState<string>("");
   const [mfrFilter, setMfrFilter] = useState<string>("");
+  const [reviewOnly, setReviewOnly] = useState(false);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
 
   const supplierName = (id: string | null) => suppliers.find((s) => s.id === id)?.name ?? "—";
@@ -43,8 +44,11 @@ export default function CatalogueManager({
     [products]
   );
   const shown = useMemo(
-    () => products.filter((p) => (!filter || p.category === filter) && (!mfrFilter || p.manufacturer === mfrFilter)),
-    [products, filter, mfrFilter]
+    () => products.filter((p) =>
+      (!filter || p.category === filter) &&
+      (!mfrFilter || p.manufacturer === mfrFilter) &&
+      (!reviewOnly || !p.manufacturer || p.category === "other")),
+    [products, filter, mfrFilter, reviewOnly]
   );
 
   const [np, setNp] = useState({ name: "", manufacturer: "", sku: "", category: "consumable" as ProductCategory, supplier_id: "", unit: "each", cost_price: "", vat_rate: "20" });
@@ -306,6 +310,10 @@ export default function CatalogueManager({
               <option value="">All manufacturers</option>
               {manufacturers.map((m) => <option key={m} value={m}>{m}</option>)}
             </select>
+            <label className="flex items-center gap-1.5 text-xs text-gray-600">
+              <input type="checkbox" checked={reviewOnly} onChange={(e) => setReviewOnly(e.target.checked)} />
+              Needs review
+            </label>
             <div className="ml-auto flex items-center gap-2">
               <button onClick={exportCsv} className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Export CSV</button>
               <label className="cursor-pointer rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
