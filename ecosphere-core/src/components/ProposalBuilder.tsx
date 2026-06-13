@@ -9,9 +9,9 @@ import {
 } from "@/lib/proposal";
 import { gbp } from "@/lib/constants";
 import { createClient } from "@/lib/supabase/client";
+import { sellPrice as sell, markupForMargin, marginForMarkup } from "@/lib/pricing";
 
 const STATUSES: ProposalStatus[] = ["draft", "ready", "sent", "accepted", "rejected", "expired"];
-const sell = (cost: number, markup: number) => Math.round(cost * (1 + markup / 100) * 100) / 100;
 
 export default function ProposalBuilder({
   proposal, initialLines, products, suppliers, margins, pos,
@@ -31,10 +31,7 @@ export default function ProposalBuilder({
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [addProductId, setAddProductId] = useState("");
-  // Margin vs markup: margin% = profit/sell, markup% = profit/cost.
-  // A 30% margin needs a 30/70 = ~43% markup on cost.
-  const markupForMargin = (m: number) => (m >= 95 ? 1900 : Math.round((m / (100 - m)) * 1000) / 10);
-  const marginForMarkup = (mk: number) => Math.round((mk / (100 + mk)) * 100);
+  // Margin vs markup helpers now live in @/lib/pricing (imported above).
   const avgMarkup = initialLines.length ? Math.round(initialLines.reduce((a, l) => a + Number(l.markup_pct), 0) / initialLines.length) : 43;
   const [jobMargin, setJobMargin] = useState<number>(marginForMarkup(avgMarkup));
   const [rev, setRev] = useState(0);
