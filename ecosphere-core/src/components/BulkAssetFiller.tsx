@@ -3,19 +3,26 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Product } from "@/lib/proposal";
+import { createClient } from "@/lib/supabase/client";
 
-// "Fill all missing" — walks every active part that has a SKU but no image yet
-// and runs the same City Plumbing lookup as the per-part button, one at a time.
+// "Fill all missing" — walks every active part with a SKU that hasn't been
+// looked up on City Plumbing yet, one at a time, attaching the image + datasheet.
 //
 // Sequential + a delay between parts on purpose: City rate-limits bursts (HTTP
 // 500). We only auto-attach when the SKU resolves to a product whose title
 // actually overlaps the part name (score gate), so a stray SKU collision can't
-// silently attach a wrong image — those are counted as "skipped" for manual review.
+// silently attach a wrong image — those are counted as "skipped".
+//
+// A part leaves the worklist once it has an image (City matched it) OR once it's
+// been marked attrs.assets_checked after a definitive no-datasheet/no-match
+// outcome — so re-runs don't keep re-fetching parts City has nothing for
+// (e.g. non-City SKUs). Transient fetch errors are NOT marked, so they retry.
 const SCORE_GATE = 0.4;
 const THROTTLE_MS = 350;
 
 export default function BulkAssetFiller({ products }: { products: Product[] }) {
   const router = useRouter();
+  const supabase = createClient();
   const [running, setRunning] = useState(false);
   const [finished, setFinished] = useState(false);
   const [done, setDone] = useState(0);
@@ -26,7 +33,7 @@ export default function BulkAssetFiller({ products }: { products: Product[] }) {
 
   const worklist = products.filter((p) => {
     const a = (p.attrs as any) ?? {};
-    return p.active && p.sku && p.sku.trim() && (!a.image_url || !a.datasheet_url);
+    return p.active && p.sku && p.sku.trim() && !a.image_url && !a.assets_checked;
   });
   const total = worklist.length;
   if (total === 0) return null;
@@ -38,6 +45,7 @@ export default function BulkAssetFiller({ products }: { products: Product[] }) {
     for (let i = 0; i < worklist.length; i++) {
       if (stop.current) break;
       const p = worklist[i];
+      let markChecked = false;
       try {
         const fr = await fetch("/api/parts/find-assets", {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: p.id }),
@@ -48,14 +56,20 @@ export default function BulkAssetFiller({ products }: { products: Product[] }) {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ id: p.id, imageUrl: f.imageUrl, datasheetUrl: f.datasheetUrl }),
           });
-          setAttached(++a);
+          setAttached(++a); // image_url now set → drops out of the worklist
         } else if (f.found && f.imageUrl) {
-          setSkipped(++sk);
+          setSkipped(++sk); markChecked = true;
         } else {
-          setNoMatch(++nm);
+          setNoMatch(++nm); markChecked = true;
         }
       } catch {
-        setNoMatch(++nm);
+        setNoMatch(++nm); // transient — leave unchecked so it retries next run
+      }
+      // Remember definitively-handled-but-not-attached parts so re-runs skip them.
+      if (markChecked) {
+        try {
+          await supabase.from("products").update({ attrs: { ...((p.attrs as any) ?? {}), assets_checked: true } }).eq("id", p.id);
+        } catch { /* non-fatal: worst case it's re-checked next run */ }
       }
       setDone(i + 1);
       await new Promise((r) => setTimeout(r, THROTTLE_MS));
@@ -72,7 +86,7 @@ export default function BulkAssetFiller({ products }: { products: Product[] }) {
         <div>
           <p className="text-sm font-medium text-gray-800">Auto-find images &amp; datasheets</p>
           <p className="text-xs text-gray-500">
-            {total} part{total === 1 ? "" : "s"} with a SKU are missing an image or datasheet — looks each up on City Plumbing and stores whatever it finds. Keep this tab open while it runs.
+            {total} part{total === 1 ? "" : "s"} haven&apos;t been looked up on City Plumbing yet — stores the image + datasheet for each one it finds, and remembers the rest so it won&apos;t re-check them. Keep this tab open while it runs.
           </p>
         </div>
         {running ? (
