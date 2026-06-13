@@ -120,6 +120,17 @@ export default function ProposalDocument({
   if (mcs.scop != null) figs.push({ label: "Efficiency (SCOP)", value: `${mcs.scop}` });
   if (mcs.coveragePct != null) figs.push({ label: "Heat demand met", value: `${mcs.coveragePct}%` });
 
+  // Technical datasheets: every line whose part has a stored datasheet, de-duped.
+  const datasheets = (() => {
+    const seen = new Set<string>();
+    const out: { label: string; url: string }[] = [];
+    for (const l of ls) {
+      const url = l.products?.attrs?.datasheet_url as string | undefined;
+      if (url && !seen.has(url)) { seen.add(url); out.push({ label: l.description, url }); }
+    }
+    return out;
+  })();
+
   return (
     <div className="relative mx-auto max-w-3xl bg-white p-8 text-gray-800">
       <style>{`@media print { .no-print { display:none !important; } body { background:#fff; } section { break-inside: avoid; } } @page { margin: 16mm; }`}</style>
@@ -405,6 +416,24 @@ export default function ProposalDocument({
                 </div>
               ))}
             </div>
+          </section>
+        )}
+
+        {/* L. Technical datasheets */}
+        {datasheets.length > 0 && (
+          <section className="mt-6">
+            <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide" style={{ color: TEAL }}>Technical datasheets</h2>
+            <p className="mb-2 text-[11px] text-gray-500">Manufacturer datasheets for the equipment specified in this proposal.</p>
+            <ul className="space-y-1 text-sm">
+              {datasheets.map((d, i) => (
+                <li key={i} className="flex gap-2">
+                  <span style={{ color: TEAL }}>•</span>
+                  <a href={d.url} target="_blank" rel="noreferrer" className="font-medium hover:underline" style={{ color: TEAL }}>
+                    {d.label} — datasheet (PDF) →
+                  </a>
+                </li>
+              ))}
+            </ul>
           </section>
         )}
 

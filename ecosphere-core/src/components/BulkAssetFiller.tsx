@@ -24,9 +24,10 @@ export default function BulkAssetFiller({ products }: { products: Product[] }) {
   const [noMatch, setNoMatch] = useState(0);
   const stop = useRef(false);
 
-  const worklist = products.filter(
-    (p) => p.active && p.sku && p.sku.trim() && !((p.attrs as any)?.image_url)
-  );
+  const worklist = products.filter((p) => {
+    const a = (p.attrs as any) ?? {};
+    return p.active && p.sku && p.sku.trim() && (!a.image_url || !a.datasheet_url);
+  });
   const total = worklist.length;
   if (total === 0) return null;
 
@@ -71,7 +72,7 @@ export default function BulkAssetFiller({ products }: { products: Product[] }) {
         <div>
           <p className="text-sm font-medium text-gray-800">Auto-find images &amp; datasheets</p>
           <p className="text-xs text-gray-500">
-            {total} part{total === 1 ? "" : "s"} with a SKU have no image yet — looks each up on City Plumbing. Keep this tab open while it runs.
+            {total} part{total === 1 ? "" : "s"} with a SKU are missing an image or datasheet — looks each up on City Plumbing and stores whatever it finds. Keep this tab open while it runs.
           </p>
         </div>
         {running ? (
