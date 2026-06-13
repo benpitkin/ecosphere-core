@@ -111,7 +111,8 @@ const tools: any[] = [
 async function runTool(name: string, input: any, admin: ReturnType<typeof createAdminClient>): Promise<string> {
   try {
     if (name === "search_catalogue") {
-      const q = String(input?.query ?? "").trim();
+      const q = String(input?.query ?? "").trim().replace(/[,()*]/g, " ").trim();
+      if (!q) return JSON.stringify({ count: 0, results: [] });
       const limit = Math.min(25, Math.max(1, Number(input?.limit) || 10));
       let query = admin
         .from("products")
@@ -211,9 +212,17 @@ export async function POST(request: Request) {
 
   const client = new Anthropic();
   const admin = createAdminClient();
+  // Leave headroom under the 60s function cap so we return a useful message
+  // rather than letting Vercel hard-kill the request mid-tool-loop.
+  const deadline = Date.now() + 50_000;
 
   try {
-    for (let round = 0; round < 6; round++) {
+    for (let round = 0; round < 8; round++) {
+      if (Date.now() > deadline) {
+        return NextResponse.json({
+          text: "That one's taking longer than I'd like, so I stopped before timing out. Try again a bit more specifically — e.g. give the exact make and model, or the part's SKU.",
+        });
+      }
       const resp = await client.messages.create({
         model: "claude-opus-4-8",
         max_tokens: 8000,
@@ -245,8 +254,12 @@ export async function POST(request: Request) {
     }
     return NextResponse.json({ text: "I wasn't able to finish that — try narrowing the request." });
   } catch (e: any) {
-    const msg = e?.message ?? "Assistant request failed";
     const status = e?.status && Number.isInteger(e.status) ? e.status : 500;
-    return NextResponse.json({ error: msg }, { status });
+    const friendly =
+      status === 401 ? "The AI key was rejected — check ANTHROPIC_API_KEY in the Core Vercel project."
+      : status === 429 ? "The AI is rate-limited right now — give it a few seconds and try again."
+      : status === 529 ? "The AI service is briefly overloaded — try again in a moment."
+      : (e?.message ?? "Assistant request failed");
+    return NextResponse.json({ error: friendly }, { status });
   }
 }
