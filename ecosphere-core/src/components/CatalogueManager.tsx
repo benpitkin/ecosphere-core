@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import type { Product, Supplier, MarginRule, ProductCategory, KitTemplate, KitTemplateItem } from "@/lib/proposal";
 import { PRODUCT_CATEGORY_LABELS, PRODUCT_CATEGORY_OPTIONS } from "@/lib/proposal";
 import { gbp } from "@/lib/constants";
@@ -355,6 +356,7 @@ export default function CatalogueManager({
                           className="w-14 rounded border border-transparent px-1 py-0.5 hover:border-gray-200 focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600"
                           onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== p.unit) updateProduct(p.id, { unit: v }); else if (!v) e.target.value = p.unit; }} />
                         <span>· {supplierName(p.supplier_id)}</span>
+                        <Link href={`/catalogue/${p.id}`} className="ml-1 shrink-0 text-teal-700 hover:underline">open ↗</Link>
                       </div>
                     </td>
                     <td className="px-3 py-2">
