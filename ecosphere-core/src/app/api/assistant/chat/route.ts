@@ -3,6 +3,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { findCityAssets } from "@/lib/cityPlumbing";
+import { attachPartAssets } from "@/lib/partAssets";
 
 // Core AI assistant — Stage 1 (read + web + part-finder).
 //
@@ -28,7 +29,9 @@ Tools:
 Guidance:
 - When a question depends on a real datasheet, current spec, or a specific model, search rather than answering from memory.
 - Be concrete and concise. When you find a datasheet or image, give the direct URL and say how confident you are it's the exact model.
-- You can read the catalogue but you cannot change it yet — if asked to attach a file, edit a part, or build a proposal, explain that and point the user to the part page (Catalogue → open the part → Datasheet box) where they can attach what you found. Action-taking is coming soon.
+- You can take actions. attach_part_assets attaches an image and/or datasheet to a part — use it whenever the user asks you to attach/upload/add a datasheet or image. It is safe and reversible, so just do it and then confirm what you attached. The URL can be one you found via find_part_assets or via web_search (a manufacturer datasheet PDF, etc.).
+- update_part edits a part's fields. Changing price (cost_price), category, SKU, or active status is a meaningful change: do NOT call update_part for those until you have said exactly what you will change and the user has confirmed. Smaller fixes (a clearly-wrong name or model code) can be done more readily, but still say what you changed.
+- To attach assets to MANY parts at once (e.g. "every part missing a datasheet"), do NOT loop here — tell the user to use the "Fill all missing" button on the Catalogue page, which is built for that and shows progress. You handle one part or a small handful.
 - You are talking to trusted internal staff, not customers.`;
 
 const tools: any[] = [
@@ -68,6 +71,39 @@ const tools: any[] = [
         sku: { type: "string", description: "SKU, if no id" },
         name: { type: "string", description: "Part name, used for match scoring when only a SKU is given" },
       },
+    },
+  },
+  {
+    name: "attach_part_assets",
+    description: "Attach an image and/or datasheet to a catalogue part. Downloads the file from the given URL(s) and stores it on the part. Use when the user asks you to attach/upload/add a datasheet or image to a part.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Product UUID to attach to (required)" },
+        imageUrl: { type: "string", description: "URL of a product image to attach" },
+        datasheetUrl: { type: "string", description: "URL of a datasheet PDF to attach" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "update_part",
+    description: "Edit fields on a catalogue part. For price/category/SKU/active changes, only call this AFTER the user has confirmed the specific change.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Product UUID (required)" },
+        name: { type: "string" },
+        manufacturer: { type: "string" },
+        category: { type: "string", description: "e.g. heat_pump, cylinder, radiator, valve, fitting, pipe, electrical, consumable, control, battery, labour, other" },
+        sku: { type: "string" },
+        unit: { type: "string" },
+        cost_price: { type: "number" },
+        vat_rate: { type: "number" },
+        active: { type: "boolean" },
+        model_code: { type: "string", description: "Manufacturer model/part code (stored in attrs.mfr_code)" },
+      },
+      required: ["id"],
     },
   },
 ];
@@ -119,6 +155,33 @@ async function runTool(name: string, input: any, admin: ReturnType<typeof create
       }
       const result = await findCityAssets({ sku, name: pname ?? "", manufacturer });
       return JSON.stringify(result);
+    }
+
+    if (name === "attach_part_assets") {
+      const result = await attachPartAssets(admin, String(input?.id ?? ""), {
+        imageUrl: input?.imageUrl, datasheetUrl: input?.datasheetUrl,
+      });
+      return JSON.stringify(result);
+    }
+
+    if (name === "update_part") {
+      const id = String(input?.id ?? "");
+      if (!id) return "id is required";
+      const patch: any = {};
+      for (const f of ["name", "manufacturer", "category", "sku", "unit"] as const) {
+        if (typeof input?.[f] === "string") patch[f] = input[f].trim() || null;
+      }
+      if (typeof input?.cost_price === "number") patch.cost_price = input.cost_price;
+      if (typeof input?.vat_rate === "number") patch.vat_rate = input.vat_rate;
+      if (typeof input?.active === "boolean") patch.active = input.active;
+      if (typeof input?.model_code === "string") {
+        const { data: cur } = await admin.from("products").select("attrs").eq("id", id).maybeSingle();
+        patch.attrs = { ...((cur?.attrs as any) ?? {}), mfr_code: input.model_code.trim() || undefined };
+      }
+      if (Object.keys(patch).length === 0) return "No recognised fields to update.";
+      const { error } = await admin.from("products").update(patch).eq("id", id);
+      if (error) return `Error: ${error.message}`;
+      return JSON.stringify({ ok: true, updated: Object.keys(patch) });
     }
 
     return `Unknown tool: ${name}`;
