@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import TasksPanel from "@/components/TasksPanel";
 import { STAGE_LABELS, STAGE_COLORS, LEAD_SOURCE_LABELS, gbp, gbpK, initials } from "@/lib/constants";
 import type { PipelineStage, LeadSource } from "@/lib/types";
 
@@ -69,6 +70,9 @@ export default async function DashboardPage() {
     customer: (r.deal_id && todayNames.get(r.deal_id)) || "Install",
     installer: r.installer ?? null,
   }));
+
+  // Office tasks (graceful if the table isn't migrated yet → empty list).
+  const { data: taskRows } = await supabase.from("tasks").select("id, title, done").order("done").order("created_at");
 
   const k = kpis ?? { active_jobs: 0, won_jobs_this_month: 0, won_value_this_month: 0, open_pipeline_value: 0, open_opportunities: 0, contacts_count: 0 };
   const cf = (cashflow ?? []) as { status: string; voucher_count: number; total_amount: number }[];
@@ -167,22 +171,25 @@ export default async function DashboardPage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-gray-200 bg-white p-4">
-          <h2 className="mb-2 text-sm font-semibold text-gray-800">Today &middot; installs</h2>
-          {todayInstalls.length === 0 ? (
-            <p className="py-4 text-sm text-gray-400">No installs scheduled today.</p>
-          ) : (
-            <ul className="space-y-2">
-              {todayInstalls.map((t, i) => (
-                <li key={i} className="flex items-center justify-between gap-2 border-l-2 pl-2 text-sm" style={{ borderColor: "#1B7A6E" }}>
-                  <span className="font-medium text-gray-800">{t.customer}</span>
-                  {t.installer && <span className="text-[11px] text-gray-400">{t.installer}</span>}
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="mt-2 text-[11px] text-gray-400">Scheduled in Dispatch · reflected here.</p>
-        </section>
+        <div className="space-y-4">
+          <section className="rounded-xl border border-gray-200 bg-white p-4">
+            <h2 className="mb-2 text-sm font-semibold text-gray-800">Today &middot; installs</h2>
+            {todayInstalls.length === 0 ? (
+              <p className="py-4 text-sm text-gray-400">No installs scheduled today.</p>
+            ) : (
+              <ul className="space-y-2">
+                {todayInstalls.map((t, i) => (
+                  <li key={i} className="flex items-center justify-between gap-2 border-l-2 pl-2 text-sm" style={{ borderColor: "#1B7A6E" }}>
+                    <span className="font-medium text-gray-800">{t.customer}</span>
+                    {t.installer && <span className="text-[11px] text-gray-400">{t.installer}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="mt-2 text-[11px] text-gray-400">Scheduled in Dispatch &middot; reflected here.</p>
+          </section>
+          <TasksPanel initial={(taskRows ?? []) as any[]} />
+        </div>
       </div>
 
       <section className="rounded-xl border border-gray-200 bg-white p-5">
