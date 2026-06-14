@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import TasksPanel from "@/components/TasksPanel";
+import RecentPayments from "@/components/RecentPayments";
 import { STAGE_LABELS, STAGE_COLORS, LEAD_SOURCE_LABELS, gbp, gbpK, initials } from "@/lib/constants";
 import type { PipelineStage, LeadSource } from "@/lib/types";
 
@@ -189,6 +190,7 @@ export default async function DashboardPage() {
             <p className="mt-2 text-[11px] text-gray-400">Scheduled in Dispatch &middot; reflected here.</p>
           </section>
           <TasksPanel initial={(taskRows ?? []) as any[]} />
+          <RecentPayments />
         </div>
       </div>
 
