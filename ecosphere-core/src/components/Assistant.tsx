@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 type Msg = { role: "user" | "assistant" | "error"; content: string };
 
@@ -37,6 +37,7 @@ export default function Assistant() {
   const [busy, setBusy] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
+  const router = useRouter();
   // When on a part page (/catalogue/<uuid>), hand the part to the assistant so
   // "this part" resolves without the user naming it.
   const partId = pathname?.match(/\/catalogue\/([0-9a-f-]{36})/i)?.[1];
@@ -63,7 +64,10 @@ export default function Assistant() {
       });
       const j = await res.json();
       if (j.error) setMsgs((m) => [...m, { role: "error", content: j.error }]);
-      else setMsgs((m) => [...m, { role: "assistant", content: j.text }]);
+      else {
+        setMsgs((m) => [...m, { role: "assistant", content: j.text }]);
+        if (j.didWrite) router.refresh(); // a part was changed — reload server data so it shows
+      }
     } catch (e: any) {
       setMsgs((m) => [...m, { role: "error", content: e?.message ?? "Request failed" }]);
     }

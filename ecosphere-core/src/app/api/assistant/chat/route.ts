@@ -232,12 +232,16 @@ export async function POST(request: Request) {
   // Leave headroom under the 60s function cap so we return a useful message
   // rather than letting Vercel hard-kill the request mid-tool-loop.
   const deadline = Date.now() + 50_000;
+  // Set when a write tool (attach/edit) succeeds, so the client can refresh the
+  // part page to show the change.
+  let didWrite = false;
 
   try {
     for (let round = 0; round < 8; round++) {
       if (Date.now() > deadline) {
         return NextResponse.json({
           text: "That one's taking longer than I'd like, so I stopped before timing out. Try again a bit more specifically — e.g. give the exact make and model, or the part's SKU.",
+          didWrite,
         });
       }
       const resp = await client.messages.create({
@@ -256,6 +260,7 @@ export async function POST(request: Request) {
           const results = [];
           for (const tu of toolUses as any[]) {
             const out = await runTool(tu.name, tu.input, admin);
+            if ((tu.name === "attach_part_assets" || tu.name === "update_part") && out.includes('"ok":true')) didWrite = true;
             results.push({ type: "tool_result", tool_use_id: tu.id, content: out });
           }
           messages.push({ role: "user", content: results });
@@ -270,9 +275,9 @@ export async function POST(request: Request) {
       }
 
       const text = resp.content.filter((b: any) => b.type === "text").map((b: any) => b.text).join("\n").trim();
-      return NextResponse.json({ text: text || "(no response)" });
+      return NextResponse.json({ text: text || "(no response)", didWrite });
     }
-    return NextResponse.json({ text: "I wasn't able to finish that — try narrowing the request." });
+    return NextResponse.json({ text: "I wasn't able to finish that — try narrowing the request.", didWrite });
   } catch (e: any) {
     const status = e?.status && Number.isInteger(e.status) ? e.status : 500;
     const friendly =
