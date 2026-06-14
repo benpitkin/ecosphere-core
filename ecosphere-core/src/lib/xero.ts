@@ -12,7 +12,8 @@ const AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize";
 const TOKEN_URL = "https://identity.xero.com/connect/token";
 const CONNECTIONS_URL = "https://api.xero.com/connections";
 export const XERO_API = "https://api.xero.com/api.xro/2.0";
-const SCOPES = "openid profile email accounting.transactions accounting.contacts offline_access";
+// Only what Core uses: write invoices, read/write contacts, and refresh tokens.
+const SCOPES = "accounting.transactions accounting.contacts offline_access";
 
 export function xeroConfigured(): boolean {
   return Boolean(process.env.XERO_CLIENT_ID && process.env.XERO_CLIENT_SECRET);
@@ -39,10 +40,11 @@ export function authorizeUrl(state: string, redirectUri: string): string {
     response_type: "code",
     client_id: process.env.XERO_CLIENT_ID ?? "",
     redirect_uri: redirectUri,
-    scope: SCOPES,
     state,
   });
-  return `${AUTHORIZE_URL}?${p.toString()}`;
+  // Append scope separately so the spaces encode as %20 (URLSearchParams would
+  // use "+", which Xero rejects with invalid_scope).
+  return `${AUTHORIZE_URL}?${p.toString()}&scope=${encodeURIComponent(SCOPES)}`;
 }
 
 type TokenSet = { access_token: string; refresh_token: string; expires_in: number };
