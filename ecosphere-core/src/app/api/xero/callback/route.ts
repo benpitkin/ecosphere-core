@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { exchangeCode, getConnections, saveConnection } from "@/lib/xero";
+import { exchangeCode, getConnections, saveConnection, callbackRedirectUri } from "@/lib/xero";
 
 // Xero OAuth2 callback: verifies the CSRF state, exchanges the code for tokens,
 // picks the connected org, and stores the connection. Redirects back to
@@ -29,7 +29,7 @@ export async function GET(request: Request) {
   if (!code || !state || !cookieState || state !== cookieState) return back(request, "xero=error&reason=state");
 
   try {
-    const redirectUri = new URL("/api/xero/callback", request.url).toString();
+    const redirectUri = callbackRedirectUri(request);
     const tokens = await exchangeCode(code, redirectUri);
     const conns = await getConnections(tokens.access_token);
     if (conns.length === 0) return back(request, "xero=error&reason=no_org");

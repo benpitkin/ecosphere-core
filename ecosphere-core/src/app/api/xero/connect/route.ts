@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
-import { xeroConfigured, authorizeUrl } from "@/lib/xero";
+import { xeroConfigured, authorizeUrl, callbackRedirectUri } from "@/lib/xero";
 
 // Starts the Xero OAuth2 flow: sets a CSRF state cookie and redirects the
 // logged-in user to Xero's consent screen. Staff-only (behind Core login).
@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   }
 
   const state = randomUUID();
-  const redirectUri = new URL("/api/xero/callback", request.url).toString();
+  const redirectUri = callbackRedirectUri(request);
   cookies().set("xero_oauth_state", state, { httpOnly: true, secure: true, sameSite: "lax", maxAge: 600, path: "/" });
   return NextResponse.redirect(authorizeUrl(state, redirectUri));
 }
