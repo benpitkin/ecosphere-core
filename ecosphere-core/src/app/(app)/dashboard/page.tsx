@@ -38,6 +38,29 @@ export default async function DashboardPage() {
   const valuedCount = valuedAmounts.length;
   const avgValued = valuedCount ? Math.round(valuedAmounts.reduce((a, b) => a + b, 0) / valuedCount) : 0;
 
+  // Jobs in delivery (Core's job board, summarised) — delivery stage derived from
+  // the Dispatch status we store; a won deal with no install activity = to schedule.
+  const { data: wonRows } = await supabase.from("deals").select("ghl_opportunity_id, job_status").eq("stage", "won");
+  const wonList = (wonRows ?? []) as any[];
+  const wonOppIds = wonList.map((w) => w.ghl_opportunity_id).filter(Boolean);
+  const djStatus = new Map<string, string>();
+  if (wonOppIds.length) {
+    const { data: djs } = await supabase.from("dispatch_jobs").select("ghl_opportunity_id, status").in("ghl_opportunity_id", wonOppIds);
+    for (const dj of (djs ?? []) as any[]) djStatus.set(dj.ghl_opportunity_id, dj.status);
+  }
+  const jobCounts = { to_schedule: 0, scheduled: 0, completed: 0 };
+  for (const w of wonList) {
+    const ds = w.ghl_opportunity_id ? djStatus.get(w.ghl_opportunity_id) : null;
+    if (ds === "completed" || w.job_status === "completed") jobCounts.completed++;
+    else if (ds === "scheduled" || w.job_status === "install_scheduled") jobCounts.scheduled++;
+    else jobCounts.to_schedule++;
+  }
+  const jobTiles = [
+    { label: "To schedule", count: jobCounts.to_schedule, dot: "#64748B" },
+    { label: "Scheduled", count: jobCounts.scheduled, dot: "#F5B83D" },
+    { label: "Completed", count: jobCounts.completed, dot: "#1B7A6E" },
+  ];
+
   const k = kpis ?? { active_jobs: 0, won_jobs_this_month: 0, won_value_this_month: 0, open_pipeline_value: 0, open_opportunities: 0, contacts_count: 0 };
   const cf = (cashflow ?? []) as { status: string; voucher_count: number; total_amount: number }[];
   const att = (attention ?? []) as { id: string; customer_name: string; stage_label: string | null; value_net: number; postcode: string | null; days_in_stage: number }[];
@@ -105,6 +128,25 @@ export default async function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* Jobs in delivery — Core's job board, summarised (Payaca leads with the schedule) */}
+      <section className="rounded-xl border border-gray-200 bg-white p-4">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-gray-800">Jobs in delivery</h2>
+          <Link href="/jobs" className="text-xs font-medium text-teal-700 hover:underline">Open board &rarr;</Link>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          {jobTiles.map((j) => (
+            <Link key={j.label} href="/jobs" className="rounded-lg border border-gray-200 p-3 transition hover:border-teal-300 hover:bg-gray-50">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: j.dot }} />
+                <span className="text-[11px] text-gray-500">{j.label}</span>
+              </div>
+              <p className="mt-1 text-2xl font-semibold text-gray-900">{j.count}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
 
       <section className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="mb-3 flex items-center justify-between">

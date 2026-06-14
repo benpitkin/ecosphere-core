@@ -71,8 +71,8 @@ export default function Sidebar({ email }: { email: string | null }) {
       <div className="flex items-center gap-2 px-5 py-4">
         <span className="grid h-8 w-8 place-items-center rounded-lg text-base font-bold text-white" style={{ backgroundColor: "#1B7A6E" }}>E</span>
         <div className="leading-tight">
-          <p className="text-sm font-semibold text-gray-900">Ecosphere Core</p>
-          <p className="text-[11px] text-gray-500">Ecosphere Energy Ltd</p>
+          <p className="text-sm font-semibold text-gray-900">EcoSphere Core</p>
+          <p className="text-[11px] text-gray-500">EcoSphere Energy Ltd</p>
         </div>
       </div>
       <div className="flex-1 space-y-5 overflow-y-auto px-3 py-2">
@@ -103,7 +103,7 @@ export default function Sidebar({ email }: { email: string | null }) {
       <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 lg:hidden">
         <div className="flex items-center gap-2">
           <span className="grid h-7 w-7 place-items-center rounded-lg text-sm font-bold text-white" style={{ backgroundColor: "#1B7A6E" }}>E</span>
-          <span className="text-sm font-semibold text-gray-900">Ecosphere Core</span>
+          <span className="text-sm font-semibold text-gray-900">EcoSphere Core</span>
         </div>
         <button onClick={() => setOpen((o) => !o)} className="rounded-md p-2 hover:bg-gray-100" aria-label="Menu">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
