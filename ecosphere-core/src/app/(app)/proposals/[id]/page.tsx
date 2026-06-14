@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Proposal, ProposalLine, Product, Supplier, MarginRule } from "@/lib/proposal";
 import ProposalBuilder from "@/components/ProposalBuilder";
 import CustomerDocEditor from "@/components/CustomerDocEditor";
+import PushToDispatchButton from "@/components/PushToDispatchButton";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +34,7 @@ export default async function ProposalPage({ params }: { params: { id: string } 
         pos={(pos ?? []) as any[]}
       />
       <CustomerDocEditor proposalId={params.id} printHref={`/print/proposal/${params.id}`} />
+      <PushToDispatchButton proposalId={params.id} />
     </div>
   );
 }

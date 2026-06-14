@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/sync-ghl",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/dispatch-retry",
+      "schedule": "17 * * * *"
     }
   ]
 }
