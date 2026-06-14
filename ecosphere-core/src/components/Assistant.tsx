@@ -35,6 +35,7 @@ export default function Assistant() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [nudge, setNudge] = useState<{ nudge: string; prompt: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
   const router = useRouter();
@@ -45,6 +46,11 @@ export default function Assistant() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [msgs, busy, open]);
+
+  // Proactive nudge from live data (e.g. "3 won jobs to hand to Dispatch").
+  useEffect(() => {
+    fetch("/api/assistant/nudge").then((r) => r.json()).then((j) => { if (j?.nudge) setNudge(j); }).catch(() => {});
+  }, []);
 
   async function send(text: string) {
     const q = text.trim();
@@ -76,15 +82,26 @@ export default function Assistant() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        aria-label="Open assistant"
-        className="fixed bottom-5 right-5 z-40 grid h-12 w-12 place-items-center rounded-full text-white shadow-lg transition hover:opacity-90"
-        style={{ backgroundColor: "#1B7A6E" }}
-      >
-        {open ? "✕" : "✨"}
-      </button>
+      <div className="fixed bottom-5 right-5 z-40 flex items-center gap-2">
+        {!open && nudge && (
+          <button
+            type="button"
+            onClick={() => { if (nudge.prompt) setInput(nudge.prompt); setOpen(true); }}
+            className="max-w-[260px] rounded-full border border-gray-200 bg-white px-3 py-2 text-left text-xs font-medium shadow-lg transition hover:border-teal-300"
+          >
+            <span className="text-teal-700">Assistant</span> <span className="text-gray-600">· {nudge.nudge}</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-label="Open assistant"
+          className="grid h-12 w-12 shrink-0 place-items-center rounded-full text-white shadow-lg transition hover:opacity-90"
+          style={{ backgroundColor: "#1B7A6E" }}
+        >
+          {open ? "✕" : "✨"}
+        </button>
+      </div>
 
       {open && (
         <div className="fixed bottom-20 right-5 z-40 flex h-[72vh] w-[min(92vw,400px)] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
