@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import type { ProductCategory } from "@/lib/proposal";
 import { mergeAssumptions } from "@/lib/standingAssumptions";
+import { getStatus as getXeroStatus, xeroConfigured } from "@/lib/xero";
 import ProposalSettingsEditor from "@/components/ProposalSettingsEditor";
 
 export const dynamic = "force-dynamic";
 
 type MarginRow = { id: string; category: ProductCategory | null; markup_pct: number };
 
-export default async function SettingsPage() {
+export default async function SettingsPage({ searchParams }: { searchParams: { xero?: string; reason?: string } }) {
   const supabase = createClient();
 
   const [margins, products, suppliers, contacts, proposals, pipelines, settings] = await Promise.all([
@@ -32,11 +34,14 @@ export default async function SettingsPage() {
   const supabaseHost = supabaseUrl ? supabaseUrl.replace(/^https?:\/\//, "") : "Not configured";
   const ghlConfigured = Boolean(process.env.GHL_API_KEY && process.env.GHL_LOCATION_ID);
 
+  const xero = await getXeroStatus(createAdminClient());
+  const xeroReady = xeroConfigured();
+
   const integrations = [
     { name: "Supabase (database + auth)", status: supabaseHost, ok: Boolean(supabaseUrl) },
     { name: "GoHighLevel", status: ghlConfigured ? "API key configured" : "Add GHL_API_KEY + GHL_LOCATION_ID to enable sync", ok: ghlConfigured },
     { name: "Reonic / design import", status: "Planned", ok: false },
-    { name: "Xero (finance / Pulse)", status: "Planned", ok: false },
+    { name: "Xero", status: xero.connected ? `Connected: ${xero.tenantName}` : xeroReady ? "Configured — not connected" : "Add XERO_CLIENT_ID/SECRET", ok: xero.connected },
   ];
 
   const counts = [
@@ -53,13 +58,13 @@ export default async function SettingsPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
         <h1 className="text-2xl font-semibold text-gray-900">Settings</h1>
-        <p className="text-sm text-gray-500">Company details, pricing defaults and integration status for Ecosphere Core.</p>
+        <p className="text-sm text-gray-500">Company details, pricing defaults and integration status for EcoSphere Core.</p>
       </div>
 
       <section className={card}>
         <h2 className="text-sm font-semibold text-gray-800">Company</h2>
         <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
-          <div className="flex justify-between sm:block"><dt className="text-gray-500">Trading name</dt><dd className="font-medium text-gray-900">Ecosphere Energy Ltd</dd></div>
+          <div className="flex justify-between sm:block"><dt className="text-gray-500">Trading name</dt><dd className="font-medium text-gray-900">EcoSphere Energy Ltd</dd></div>
           <div className="flex justify-between sm:block"><dt className="text-gray-500">Sector</dt><dd className="font-medium text-gray-900">MCS-accredited renewable installer</dd></div>
           <div className="flex justify-between sm:block"><dt className="text-gray-500">Region</dt><dd className="font-medium text-gray-900">Devon, UK</dd></div>
           <div className="flex justify-between sm:block"><dt className="text-gray-500">Products</dt><dd className="font-medium text-gray-900">ASHP · Solar PV · Battery · Heating</dd></div>
@@ -72,6 +77,26 @@ export default async function SettingsPage() {
       <p className="text-xs text-gray-400">
         Per-part costs and SKUs are managed in the <Link href="/catalogue" className="font-medium text-teal-700 hover:underline">Catalogue</Link>.
       </p>
+
+      <section className={card}>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-800">Xero (invoicing)</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              {xero.connected ? `Connected to ${xero.tenantName}. Jobs can raise invoices into Xero.` : "Connect your Xero organisation so won jobs can raise invoices."}
+            </p>
+          </div>
+          {xeroReady ? (
+            <a href="/api/xero/connect" className="shrink-0 rounded-lg px-3 py-2 text-sm font-semibold text-white" style={{ backgroundColor: "#1B7A6E" }}>
+              {xero.connected ? "Reconnect" : "Connect Xero"}
+            </a>
+          ) : (
+            <span className="shrink-0 rounded-lg bg-gray-100 px-3 py-2 text-xs text-gray-400">Set XERO_CLIENT_ID/SECRET</span>
+          )}
+        </div>
+        {searchParams.xero === "connected" && <p className="mt-2 rounded-md bg-teal-50 px-3 py-2 text-xs text-teal-700">Xero connected successfully.</p>}
+        {searchParams.xero === "error" && <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-xs text-red-700">Xero connection failed{searchParams.reason ? ` (${searchParams.reason})` : ""}. Try again.</p>}
+      </section>
 
       <section className={card}>
         <h2 className="text-sm font-semibold text-gray-800">Integrations</h2>
