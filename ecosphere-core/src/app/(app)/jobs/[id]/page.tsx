@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { gbp, PRODUCT_LABELS } from "@/lib/constants";
 import type { ProductType } from "@/lib/types";
+import { getStatus as getXeroStatus, getInvoiceByReference, jobInvoiceReference, xeroInvoiceUrl } from "@/lib/xero";
+import RaiseInvoiceButton from "@/components/RaiseInvoiceButton";
 
 export const dynamic = "force-dynamic";
 
@@ -90,6 +92,13 @@ export default async function JobPage({ params }: { params: { id: string } }) {
     }
   }
 
+  // Xero invoice (push-only): look it up by the job's stable reference.
+  const xero = await getXeroStatus(createAdminClient());
+  let invoice: Awaited<ReturnType<typeof getInvoiceByReference>> = null;
+  if (xero.connected) {
+    try { invoice = await getInvoiceByReference(createAdminClient(), jobInvoiceReference(d.id)); } catch { invoice = null; }
+  }
+
   const stage = deliveryStage(d.job_status ?? null, dj?.status ?? null);
   const pill = STAGE_META[stage];
   const commissioningCount = Array.isArray(dj?.commissioning) ? dj.commissioning.length : (dj?.commissioning ? 1 : 0);
@@ -157,6 +166,30 @@ export default async function JobPage({ params }: { params: { id: string } }) {
               </Link>
             ))}
           </div>
+        </Card>
+
+        {/* Invoice (Xero, push-only) */}
+        <Card title="Invoice">
+          {invoice ? (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="rounded-full px-2 py-0.5 text-[11px] font-semibold"
+                  style={invoice.status === "PAID" ? { backgroundColor: "#EAF4F1", color: "#155F56" } : invoice.status === "DRAFT" ? { backgroundColor: "#F1F5F9", color: "#475569" } : { backgroundColor: "#FEF6E7", color: "#B45309" }}>
+                  {invoice.status}
+                </span>
+                <span className="text-sm font-medium text-gray-800">{gbp(invoice.total)}</span>
+              </div>
+              {invoice.number && <p className="text-xs text-gray-500">{invoice.number}</p>}
+              <a href={xeroInvoiceUrl(invoice.id)} target="_blank" rel="noreferrer" className="text-sm text-teal-700 hover:underline">View in Xero &rarr;</a>
+            </div>
+          ) : !xero.connected ? (
+            <p className="text-sm text-gray-400">Connect Xero in <Link href="/settings" className="text-teal-700 hover:underline">Settings</Link> to raise invoices.</p>
+          ) : (
+            <div>
+              <p className="mb-2 text-sm text-gray-500">No invoice yet — raise a draft in Xero from the accepted quote.</p>
+              <RaiseInvoiceButton jobId={d.id} />
+            </div>
+          )}
         </Card>
 
         {/* Documents & install record */}

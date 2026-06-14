@@ -131,3 +131,78 @@ export async function xeroApi(admin: Admin, path: string, init?: RequestInit): P
     },
   });
 }
+
+const xeroWhere = (s: string) => encodeURIComponent(s);
+
+// Find a Xero contact by exact name, else create it. Returns the ContactID.
+export async function findOrCreateContact(admin: Admin, opts: { name: string; email?: string | null }): Promise<string> {
+  const safeName = opts.name.replace(/"/g, "");
+  const found = await xeroApi(admin, `/Contacts?where=${xeroWhere(`Name=="${safeName}"`)}`);
+  if (found.ok) {
+    const j = await found.json();
+    if (j.Contacts?.length) return j.Contacts[0].ContactID;
+  }
+  const body = { Contacts: [{ Name: opts.name, ...(opts.email ? { EmailAddress: opts.email } : {}) }] };
+  const res = await xeroApi(admin, `/Contacts`, { method: "POST", body: JSON.stringify(body) });
+  const j = await res.json();
+  if (!res.ok || !j.Contacts?.length) throw new Error(`Xero contact create failed: ${JSON.stringify(j).slice(0, 200)}`);
+  return j.Contacts[0].ContactID;
+}
+
+// First revenue/sales account code, so draft invoice lines are complete enough
+// to approve. Undefined if none found — the line is still created (office sets it).
+export async function defaultSalesAccountCode(admin: Admin): Promise<string | undefined> {
+  const res = await xeroApi(admin, `/Accounts?where=${xeroWhere(`Class=="REVENUE"`)}`);
+  if (!res.ok) return undefined;
+  const j = await res.json();
+  const accts = (j.Accounts ?? []) as any[];
+  return (accts.find((a) => a.Type === "SALES" && a.Code) ?? accts.find((a) => a.Code))?.Code;
+}
+
+export type InvoiceSummary = { id: string; number: string | null; status: string; total: number; ref: string | null };
+function summarise(inv: any): InvoiceSummary {
+  return { id: inv.InvoiceID, number: inv.InvoiceNumber ?? null, status: inv.Status, total: Number(inv.Total ?? 0), ref: inv.Reference ?? null };
+}
+
+// Look up an existing invoice by our Reference (so we never duplicate, and can
+// reflect live status). Returns null if none.
+export async function getInvoiceByReference(admin: Admin, reference: string): Promise<InvoiceSummary | null> {
+  const res = await xeroApi(admin, `/Invoices?where=${xeroWhere(`Reference=="${reference.replace(/"/g, "")}"`)}`);
+  if (!res.ok) return null;
+  const j = await res.json();
+  return j.Invoices?.length ? summarise(j.Invoices[0]) : null;
+}
+
+export type DraftLine = { description: string; qty: number; unitAmount: number };
+export async function createDraftInvoice(
+  admin: Admin,
+  opts: { contactId: string; reference: string; lineItems: DraftLine[]; accountCode?: string }
+): Promise<InvoiceSummary> {
+  const inv = {
+    Type: "ACCREC",
+    Contact: { ContactID: opts.contactId },
+    Status: "DRAFT",
+    Reference: opts.reference,
+    LineItems: opts.lineItems.map((li) => ({
+      Description: li.description,
+      Quantity: li.qty,
+      UnitAmount: li.unitAmount,
+      ...(opts.accountCode ? { AccountCode: opts.accountCode } : {}),
+    })),
+  };
+  const res = await xeroApi(admin, `/Invoices`, { method: "POST", body: JSON.stringify({ Invoices: [inv] }) });
+  const j = await res.json();
+  if (!res.ok || !j.Invoices?.length) throw new Error(`Xero invoice create failed: ${JSON.stringify(j).slice(0, 300)}`);
+  return summarise(j.Invoices[0]);
+}
+
+// Deep link to an invoice in Xero.
+export function xeroInvoiceUrl(invoiceId: string): string {
+  return `https://go.xero.com/app/invoicing/view/${invoiceId}`;
+}
+
+// Stable, human-readable invoice Reference tying a Xero invoice to a Core job.
+// Used to both tag the invoice and look it up (so we never duplicate).
+export function jobInvoiceReference(dealId: string): string {
+  return `Core job ${dealId.slice(0, 8).toUpperCase()}`;
+}
