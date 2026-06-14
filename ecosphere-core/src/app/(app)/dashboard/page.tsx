@@ -55,11 +55,20 @@ export default async function DashboardPage() {
     else if (ds === "scheduled" || w.job_status === "install_scheduled") jobCounts.scheduled++;
     else jobCounts.to_schedule++;
   }
-  const jobTiles = [
-    { label: "To schedule", count: jobCounts.to_schedule, dot: "#64748B" },
-    { label: "Scheduled", count: jobCounts.scheduled, dot: "#F5B83D" },
-    { label: "Completed", count: jobCounts.completed, dot: "#1B7A6E" },
-  ];
+  // Today's installs — scheduling lives in Dispatch; Core reflects the date read-only.
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const { data: todayRows } = await supabase
+    .from("dispatch_jobs").select("deal_id, installer").eq("install_date", todayIso);
+  const todayDealIds = ((todayRows ?? []) as any[]).map((r) => r.deal_id).filter(Boolean);
+  const todayNames = new Map<string, string>();
+  if (todayDealIds.length) {
+    const { data: tnd } = await supabase.from("deals").select("id, customer_name").in("id", todayDealIds);
+    for (const dd of (tnd ?? []) as any[]) todayNames.set(dd.id, dd.customer_name);
+  }
+  const todayInstalls = ((todayRows ?? []) as any[]).map((r) => ({
+    customer: (r.deal_id && todayNames.get(r.deal_id)) || "Install",
+    installer: r.installer ?? null,
+  }));
 
   const k = kpis ?? { active_jobs: 0, won_jobs_this_month: 0, won_value_this_month: 0, open_pipeline_value: 0, open_opportunities: 0, contacts_count: 0 };
   const cf = (cashflow ?? []) as { status: string; voucher_count: number; total_amount: number }[];
@@ -76,6 +85,16 @@ export default async function DashboardPage() {
   });
   const funnelMax = Math.max(1, ...funnel.map((f) => f.value));
   const wonValue = funnel.find((f) => f.stage === "won")?.value ?? 0;
+
+  // Unified lifecycle strip (Payaca-style: Lead -> Complete) — sales stages + job delivery.
+  const fcount = (s: PipelineStage) => funnel.find((f) => f.stage === s)?.count ?? 0;
+  const lifecycle = [
+    { label: "Lead", count: fcount("new_enquiry") + fcount("contacted"), color: "#64748B" },
+    { label: "Survey", count: fcount("survey_booked"), color: "#7C3AED" },
+    { label: "Quote", count: fcount("quoted"), color: "#B45309" },
+    { label: "Install", count: jobCounts.to_schedule + jobCounts.scheduled, color: "#F5B83D" },
+    { label: "Complete", count: jobCounts.completed, color: "#1B7A6E" },
+  ];
 
   // Lead-source breakdown (descending by value).
   const sourceRows = ((bySource ?? []) as { lead_source: LeadSource; deal_count: number; total_net_value: number }[])
@@ -129,24 +148,42 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      {/* Jobs in delivery — Core's job board, summarised (Payaca leads with the schedule) */}
-      <section className="rounded-xl border border-gray-200 bg-white p-4">
-        <div className="mb-2 flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-gray-800">Jobs in delivery</h2>
-          <Link href="/jobs" className="text-xs font-medium text-teal-700 hover:underline">Open board &rarr;</Link>
-        </div>
-        <div className="grid grid-cols-3 gap-3">
-          {jobTiles.map((j) => (
-            <Link key={j.label} href="/jobs" className="rounded-lg border border-gray-200 p-3 transition hover:border-teal-300 hover:bg-gray-50">
-              <div className="flex items-center gap-2">
-                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: j.dot }} />
-                <span className="text-[11px] text-gray-500">{j.label}</span>
-              </div>
-              <p className="mt-1 text-2xl font-semibold text-gray-900">{j.count}</p>
-            </Link>
-          ))}
-        </div>
-      </section>
+      {/* Pipeline lifecycle (Lead -> Complete) + Today's installs — Payaca-style */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <section className="rounded-xl border border-gray-200 bg-white p-4 lg:col-span-2">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-800">Pipeline</h2>
+            <Link href="/pipeline" className="text-xs font-medium text-teal-700 hover:underline">View &rarr;</Link>
+          </div>
+          <div className="grid grid-cols-5 gap-2">
+            {lifecycle.map((s, i) => (
+              <Link key={s.label} href={i >= 3 ? "/jobs" : "/pipeline"}
+                className="rounded-lg border border-gray-100 p-3 text-center transition hover:bg-gray-50">
+                <span className="mx-auto mb-1.5 block h-1 w-8 rounded" style={{ backgroundColor: s.color }} />
+                <p className="text-2xl font-semibold text-gray-900">{s.count}</p>
+                <p className="text-[11px] text-gray-500">{s.label}</p>
+              </Link>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-xl border border-gray-200 bg-white p-4">
+          <h2 className="mb-2 text-sm font-semibold text-gray-800">Today &middot; installs</h2>
+          {todayInstalls.length === 0 ? (
+            <p className="py-4 text-sm text-gray-400">No installs scheduled today.</p>
+          ) : (
+            <ul className="space-y-2">
+              {todayInstalls.map((t, i) => (
+                <li key={i} className="flex items-center justify-between gap-2 border-l-2 pl-2 text-sm" style={{ borderColor: "#1B7A6E" }}>
+                  <span className="font-medium text-gray-800">{t.customer}</span>
+                  {t.installer && <span className="text-[11px] text-gray-400">{t.installer}</span>}
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="mt-2 text-[11px] text-gray-400">Scheduled in Dispatch · reflected here.</p>
+        </section>
+      </div>
 
       <section className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="mb-3 flex items-center justify-between">
