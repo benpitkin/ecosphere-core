@@ -12,8 +12,11 @@ const AUTHORIZE_URL = "https://login.xero.com/identity/connect/authorize";
 const TOKEN_URL = "https://identity.xero.com/connect/token";
 const CONNECTIONS_URL = "https://api.xero.com/connections";
 export const XERO_API = "https://api.xero.com/api.xro/2.0";
-// Only what Core uses: write invoices, read/write contacts, and refresh tokens.
-const SCOPES = "accounting.transactions accounting.contacts offline_access";
+// Only what Core uses: write invoices, read/write contacts, refresh tokens.
+// Granular scopes (NOT the broad accounting.transactions): this Xero app was
+// created after 2 Mar 2026, so the broad scope is invalid_scope — apps from then
+// on must use granular scopes. accounting.invoices covers creating invoices.
+const SCOPES = "accounting.invoices accounting.contacts offline_access";
 
 export function xeroConfigured(): boolean {
   return Boolean(process.env.XERO_CLIENT_ID && process.env.XERO_CLIENT_SECRET);
