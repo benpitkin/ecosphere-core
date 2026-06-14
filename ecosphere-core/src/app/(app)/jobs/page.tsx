@@ -90,7 +90,7 @@ export default async function JobsPage() {
               <div className="space-y-2">
                 {items.length === 0 && <p className="px-1 py-4 text-center text-xs text-gray-400">Nothing here.</p>}
                 {items.map((j) => (
-                  <Link key={j.id} href={`/deals/${j.id}`}
+                  <Link key={j.id} href={`/jobs/${j.id}`}
                     className="block rounded-lg border border-gray-200 bg-white p-3 transition hover:border-teal-300 hover:shadow-sm">
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-sm font-semibold text-gray-900">{j.customer_name}</p>
