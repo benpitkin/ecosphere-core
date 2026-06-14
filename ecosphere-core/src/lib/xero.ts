@@ -18,6 +18,18 @@ export function xeroConfigured(): boolean {
   return Boolean(process.env.XERO_CLIENT_ID && process.env.XERO_CLIENT_SECRET);
 }
 
+// The OAuth callback URL, built from the public host the user actually hit
+// (x-forwarded-host on Vercel — NOT request.url, which can resolve to an
+// internal/deployment host). connect and callback both use this so the
+// authorize redirect_uri and the token-exchange redirect_uri are identical and
+// match the URI registered in the Xero app.
+export function callbackRedirectUri(request: Request): string {
+  const h = request.headers;
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? new URL(request.url).host;
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  return `${proto}://${host}/api/xero/callback`;
+}
+
 function basicAuth(): string {
   return Buffer.from(`${process.env.XERO_CLIENT_ID}:${process.env.XERO_CLIENT_SECRET}`).toString("base64");
 }
